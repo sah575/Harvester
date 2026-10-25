@@ -1,17 +1,19 @@
-using System.Collections;
-using System.Collections.Generic;
-using Unity.VisualScripting;
 using UnityEngine;
-using TMPro; // TextMeshPro kütüphanesini ekleyin
+using TMPro;
 using UnityEngine.UI;
 using Unity.Netcode;
 using UnityEngine.SceneManagement;
 
-public class lobby : NetworkBehaviour
+public class lobby : MonoBehaviour
 {
     [SerializeField] private Button hostButton, clientButton, readyHost, readyClient;
     public GameObject page1, page2, page3;
-    [SerializeField] private TMP_InputField hostNameInput, hostpassInput, clientNameInput, clientPassInput; // TMP_InputField referanslarý
+    [SerializeField] private TMP_InputField hostNameInput, hostpassInput, clientNameInput, clientPassInput; // TMP_InputField referanslarÄ±
+    [SerializeField] private int requiredPlayers = 2; // Oyunun baÅŸlamasÄ± iÃ§in gereken oyuncu sayÄ±sÄ±
+    [SerializeField] private string gameSceneName = "world";
+
+    private string hostPassword;
+    private bool gameStarted;
 
     private void Awake()
     {
@@ -29,63 +31,93 @@ public class lobby : NetworkBehaviour
 
         readyHost.onClick.AddListener(() =>
         {
-            string userInput = hostNameInput.text; // InputField içeriðini al
-            string passHost = hostpassInput.text; // InputField içeriðini al
-            Debug.Log("Host Kullanýcý Giriþi: " + userInput); // Konsola yazdýr
-            Debug.Log("Host Þifresi: " + passHost); // Konsola yazdýr
-            NetworkManager.Singleton.NetworkConfig.ConnectionData = System.Text.Encoding.ASCII.GetBytes(passHost);
-            // Baðlantý onaylama ayarlarý
+            hostPassword = hostpassInput.text;
+            Debug.Log("Host KullanÄ±cÄ± GiriÅŸi: " + hostNameInput.text);
             hostNameInput.interactable = false;
             hostpassInput.interactable = false;
             readyHost.interactable = false;
-            NetworkManager.Singleton.ConnectionApprovalCallback = ApprovalCheck;
-            NetworkManager.Singleton.StartHost();
+
+            var nm = NetworkManager.Singleton;
+            // Host da kendi baÄŸlantÄ±sÄ± iÃ§in onaydan geÃ§er, o yÃ¼zden kendi ÅŸifresini gÃ¶nderiyor
+            nm.NetworkConfig.ConnectionData = System.Text.Encoding.UTF8.GetBytes(hostPassword);
+            nm.ConnectionApprovalCallback = ApprovalCheck;
+            nm.OnClientConnectedCallback += OnClientConnected;
+            nm.StartHost();
         });
 
         readyClient.onClick.AddListener(() =>
         {
-            string userInput = clientNameInput.text; // InputField içeriðini al
-            string passClient = clientPassInput.text; // InputField içeriðini al
-            Debug.Log("Client Kullanýcý Giriþi: " + userInput); // Konsola yazdýr
-            Debug.Log("Client Þifresi: " + passClient); // Konsola yazdýr
+            Debug.Log("Client KullanÄ±cÄ± GiriÅŸi: " + clientNameInput.text);
             clientNameInput.interactable = false;
             clientPassInput.interactable = false;
             readyClient.interactable = false;
-            // Oda þifresini ayarlama
-            NetworkManager.Singleton.NetworkConfig.ConnectionData = System.Text.Encoding.ASCII.GetBytes(passClient);
-            NetworkManager.Singleton.StartClient();
+
+            var nm = NetworkManager.Singleton;
+            // Oda ÅŸifresini ayarlama
+            nm.NetworkConfig.ConnectionData = System.Text.Encoding.UTF8.GetBytes(clientPassInput.text);
+            nm.OnClientDisconnectCallback += OnClientDisconnected;
+            nm.StartClient();
         });
     }
 
-    private void Update()
+    private void OnDestroy()
     {
-        if (IsServer)
+        var nm = NetworkManager.Singleton;
+        if (nm == null) return;
+        nm.OnClientConnectedCallback -= OnClientConnected;
+        nm.OnClientDisconnectCallback -= OnClientDisconnected;
+    }
+
+    private void OnClientConnected(ulong clientId)
+    {
+        var nm = NetworkManager.Singleton;
+        if (!nm.IsServer || gameStarted) return;
+
+        if (nm.ConnectedClientsIds.Count >= requiredPlayers)
         {
-            if (NetworkManager.Singleton.ConnectedClients.Count == 2)
-            {
-                NetworkManager.SceneManager.LoadScene("world", LoadSceneMode.Single);
-            }
+            gameStarted = true;
+            nm.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
         }
+    }
+
+    // Reddedilen client'a sebebini gÃ¶ster ve tekrar denemesine izin ver
+    private void OnClientDisconnected(ulong clientId)
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm.IsServer) return;
+
+        if (!string.IsNullOrEmpty(nm.DisconnectReason))
+        {
+            Debug.Log("BaÄŸlantÄ± reddedildi: " + nm.DisconnectReason);
+        }
+        clientNameInput.interactable = true;
+        clientPassInput.interactable = true;
+        readyClient.interactable = true;
     }
 
     private void ApprovalCheck(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
     {
-        var connectionData = request.Payload;
-        string clientPassword = System.Text.Encoding.ASCII.GetString(connectionData);
+        string clientPassword = System.Text.Encoding.UTF8.GetString(request.Payload);
+        response.CreatePlayerObject = false; // Karakterleri world sahnesinde SpamChars oluÅŸturuyor
 
-        // Host'un mevcut þifresini almak için bir mekanizma ekleyin
-        string hostPassword = System.Text.Encoding.ASCII.GetString(NetworkManager.Singleton.NetworkConfig.ConnectionData);
-
-        // Þifre kontrolü
-        if (clientPassword == hostPassword)
+        if (gameStarted)
         {
-            response.Approved = true;
-            response.CreatePlayerObject = false; // Host bu seçeneði ayarlayabilir
+            response.Approved = false;
+            response.Reason = "Game already started.";
         }
-        else
+        else if (NetworkManager.Singleton.ConnectedClientsIds.Count >= requiredPlayers)
+        {
+            response.Approved = false;
+            response.Reason = "Room is full.";
+        }
+        else if (clientPassword != hostPassword)
         {
             response.Approved = false;
             response.Reason = "Invalid room password.";
+        }
+        else
+        {
+            response.Approved = true;
         }
     }
 }

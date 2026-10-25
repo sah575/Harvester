@@ -1,14 +1,11 @@
-using System.Collections;
-using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
-using static TMPro.SpriteAssetUtilities.TexturePacker_JsonArray;
 
+// Yaya karakter kontrolü. Pozisyon NetworkTransform (Owner), animasyon OwnerNetworkAnimator ile senkron.
 public class CharMovement : NetworkBehaviour
 {
-    public float speed = 12f;
-    private float gravity = -9.81f;
-    private Vector3 velocity;
+    public float walkSpeed = 12f;
+    public float runSpeed = 20f;
     private float jumpHeight = 3f;
     public Transform groundCheck;
     private float groundDistance = 0.4f;
@@ -19,59 +16,63 @@ public class CharMovement : NetworkBehaviour
     private float mouseSensitivity = 150f;
     private float xRotation = 0f;
     private Rigidbody rb;
-    private GameObject spin;
 
-    void Start()
+    // Input Update'te okunur, fizik FixedUpdate'te uygulanır
+    private float inputX, inputZ;
+    private bool jumpRequested;
+    private bool isRunning;
+
+    private void Awake()
     {
-        
         animator = GetComponent<Animator>();
-        Cursor.lockState = CursorLockMode.Locked;
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true;
-        if (IsOwner)  cam.gameObject.SetActive(true);
-        spin=frankMovement.Instance.spinns;
     }
 
-    void FixedUpdate()
+    public override void OnNetworkSpawn()
+    {
+        cam.gameObject.SetActive(IsOwner);
+        if (IsOwner) Cursor.lockState = CursorLockMode.Locked;
+    }
+
+    private void Update()
+    {
+        if (!IsOwner) return;
+
+        inputX = Input.GetAxis("Horizontal");
+        inputZ = Input.GetAxis("Vertical");
+        isRunning = Input.GetKey(KeyCode.LeftShift);
+        if (Input.GetKeyDown(KeyCode.Space)) jumpRequested = true;
+
+        animator.SetFloat("run", Mathf.Abs(inputZ));
+        Look();
+    }
+
+    private void FixedUpdate()
     {
         if (!IsOwner) return;
         Move();
-        Look();
-        float rotationSpeed = frankMovement.Instance.networkRotationSpeed.Value;
-        Debug.Log(rotationSpeed);
     }
 
     private void Move()
     {
         isGrounded = Physics.CheckSphere(groundCheck.position, groundDistance, groundLayerMask);
 
-        if (isGrounded && velocity.y < 0)
-        {
-            velocity.y = -2f;
-        }
+        float speed = isRunning ? runSpeed : walkSpeed;
+        Vector3 move = (transform.right * inputX + transform.forward * inputZ) * speed;
 
-        float x = Input.GetAxis("Horizontal");
-        float z = Input.GetAxis("Vertical");
-        animator.SetFloat("run", Mathf.Abs(z));
-        Vector3 move = transform.right * x + transform.forward * z;
+        // Yerçekimini Rigidbody hallediyor, biz sadece yatay hızı ve zıplamayı ayarlıyoruz
+        Vector3 velocity = rb.linearVelocity;
+        velocity.x = move.x;
+        velocity.z = move.z;
 
-        rb.MovePosition(rb.position + move * speed * Time.fixedDeltaTime);
+        if (jumpRequested && isGrounded)
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * Physics.gravity.y);
+        }
+        jumpRequested = false;
 
-        velocity.y += gravity * Time.fixedDeltaTime;
-        rb.MovePosition(rb.position + velocity * Time.fixedDeltaTime);
-
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
-        {
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-        }
-        if (Input.GetKey(KeyCode.LeftShift) )
-        {
-            speed = 20;
-        }
-        else
-        {
-            speed = 12f;
-        }
+        rb.linearVelocity = velocity;
     }
 
     private void Look()
