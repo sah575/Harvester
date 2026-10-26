@@ -31,7 +31,8 @@ public struct LobbyPlayer : INetworkSerializable, IEquatable<LobbyPlayer>
 public class lobby : NetworkBehaviour
 {
     public const int MaxPlayers = 4;
-    public const int MinPlayers = 2;
+    // Editörde ve development build'de tek başına girip test edilebilsin
+    public static int MinPlayers => Debug.isDebugBuild ? 1 : 2;
     const int MaxNameLength = 16;
     const ushort Port = 7777;
 
@@ -321,7 +322,8 @@ public class lobby : NetworkBehaviour
             reason = "Başlamak için en az " + MinPlayers + " oyuncu gerekli.";
             return false;
         }
-        if (HarvesterIndex() < 0)
+        // Tek kişilik debug turunda rol serbest: robot seçen Harvester'sız dolaşır
+        if (HarvesterIndex() < 0 && players.Count > 1)
         {
             reason = "Bir oyuncu Harvester'ı seçmeli.";
             return false;

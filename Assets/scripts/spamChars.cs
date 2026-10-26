@@ -70,12 +70,13 @@ public class SpamChars : MonoBehaviour
     }
 
     // Lobide Harvester'ı seçen oyuncu. Lobi atlanmışsa (doğrudan test) host Harvester olur.
+    // Lobiden kimse seçmeden gelindiyse (tek kişilik robot testi) Harvester yoktur.
     private static ulong FindHarvester(List<ulong> clientIds)
     {
         foreach (var pair in MatchSettings.Players)
         {
             if (pair.Value.IsHarvester && clientIds.Contains(pair.Key)) return pair.Key;
         }
-        return clientIds[0];
+        return MatchSettings.Players.Count > 0 ? ulong.MaxValue : clientIds[0];
     }
 }

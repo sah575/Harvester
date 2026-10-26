@@ -140,6 +140,27 @@ public static class WorldBuilder
         var center = CreateText("Center", go.transform, 110, FontStyles.Bold, new Vector2(0.5f, 0.5f), new Vector2(0f, 80f), new Vector2(1600, 160), TextAlignmentOptions.Center);
         var sub = CreateText("Sub", go.transform, 32, FontStyles.Normal, new Vector2(0.5f, 0.5f), new Vector2(0f, -40f), new Vector2(1400, 140), TextAlignmentOptions.Top);
 
+        // Stamina barı: alt orta, sadece robotlara görünür
+        var stamina = new GameObject("Stamina", typeof(RectTransform), typeof(Image));
+        stamina.transform.SetParent(go.transform, false);
+        var staminaRect = (RectTransform)stamina.transform;
+        staminaRect.anchorMin = staminaRect.anchorMax = staminaRect.pivot = new Vector2(0.5f, 0f);
+        staminaRect.anchoredPosition = new Vector2(0f, 60f);
+        staminaRect.sizeDelta = new Vector2(420f, 14f);
+        var staminaBack = stamina.GetComponent<Image>();
+        staminaBack.color = new Color(0f, 0f, 0f, 0.55f);
+        staminaBack.raycastTarget = false;
+
+        var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image));
+        fill.transform.SetParent(stamina.transform, false);
+        var fillRect = (RectTransform)fill.transform;
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = fillRect.offsetMax = Vector2.zero; // Kenar boşluğu olsa stamina 0'da genişlik eksiye düşerdi
+        var fillImage = fill.GetComponent<Image>();
+        fillImage.raycastTarget = false;
+        stamina.SetActive(false);
+
         var hud = go.AddComponent<GameHUD>();
         var so = new SerializedObject(hud);
         so.FindProperty("timerText").objectReferenceValue = timer;
@@ -147,6 +168,9 @@ public static class WorldBuilder
         so.FindProperty("robotsText").objectReferenceValue = robots;
         so.FindProperty("centerText").objectReferenceValue = center;
         so.FindProperty("subText").objectReferenceValue = sub;
+        so.FindProperty("staminaRoot").objectReferenceValue = stamina;
+        so.FindProperty("staminaFill").objectReferenceValue = fillRect;
+        so.FindProperty("staminaFillImage").objectReferenceValue = fillImage;
         so.ApplyModifiedProperties();
 
         EditorSceneManager.MarkSceneDirty(go.scene);

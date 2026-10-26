@@ -7,7 +7,7 @@ using UnityEngine;
 // Senkronizasyon:
 //  - Gövde pozisyon/rotasyon: NetworkTransform (Owner authority) + NetworkRigidbody
 //  - Biçme makarası: sadece dönüş HIZI ağdan gider, her client makarayı kendisi döndürür
-//  - Direksiyon ve tekerlekler: owner'ın girdisinden/açısından her client'ta yeniden hesaplanır
+//  - Direksiyon ve tekerlekler: owner'ın teker açısından her client'ta yeniden hesaplanır
 public class frankMovement : NetworkBehaviour
 {
     #region spins
@@ -35,14 +35,18 @@ public class frankMovement : NetworkBehaviour
 
     // Owner yazar, herkes okur. Değerler sadece değişince gönderilir.
     private readonly NetworkVariable<float> networkReelSpeed = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
-    private readonly NetworkVariable<float> networkSteerInput = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
     private readonly NetworkVariable<float> networkSteerAngle = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
     public float motorTorque = 10000;
     public float brakeTorque = 2000;
+    public float engineBrakeTorque = 300; // Gaz bırakılınca hidrostatik şanzıman gibi yavaşlatır
     public float maxSpeed = 30;
+    public float maxReverseSpeed = 8;
+    [Range(0f, 1f)] public float torqueFadeStart = 0.6f; // Tork, hız limitinin bu oranından sonra azalmaya başlar
     public float steeringRange = 35;
     public float steeringRangeAtMaxSpeed = 10;
+    public float steerSpeed = 70; // Tekerlerin dönüş hızı (derece/sn)
+    public float steeringWheelRatio = 4; // Kabindeki direksiyon / teker açısı oranı
     public float centreOfGravityOffset = -1f;
 
     public Camera fpcam;
@@ -72,6 +76,7 @@ public class frankMovement : NetworkBehaviour
     float mouseY;
     Rigidbody rigidBody;
     Quaternion direksiyonBaseRotation;
+    float steerAngle; // Arka tekerlerin şu anki açısı; uzak client'ta ağdan gelen değere yaklaşır
 
     // Uzak client'ta tekerlek dönüşünü hesaplamak için
     float[] remoteWheelRoll;
@@ -142,12 +147,34 @@ public class frankMovement : NetworkBehaviour
 
     void Move()
     {
-        float forwardSpeed = Vector3.Dot(transform.forward, rigidBody.linearVelocity);
-        float speedFactor = Mathf.InverseLerp(0, maxSpeed, forwardSpeed);
-        float currentMotorTorque = Mathf.Lerp(motorTorque, 0, speedFactor);
-        float currentSteerRange = Mathf.Lerp(steeringRange, steeringRangeAtMaxSpeed, speedFactor);
-        bool isAccelerating = Mathf.Sign(vInput) == Mathf.Sign(forwardSpeed);
-        float steerAngle = hInput * currentSteerRange;
+        // Modelin önü -Z yönünde: pozitif tork aracı geri götürür.
+        // Bu yüzden hız ve gaz biçerdöverin önüne göre (ileri = pozitif) hesaplanıyor.
+        float forwardSpeed = -Vector3.Dot(transform.forward, rigidBody.linearVelocity);
+        float throttle = -vInput;
+
+        float speedLimit = forwardSpeed >= 0f ? maxSpeed : maxReverseSpeed;
+        float currentMotorTorque = Mathf.Lerp(motorTorque, 0, Mathf.InverseLerp(speedLimit * torqueFadeStart, speedLimit, Mathf.Abs(forwardSpeed)));
+        float currentSteerRange = Mathf.Lerp(steeringRange, steeringRangeAtMaxSpeed, Mathf.InverseLerp(0, maxSpeed, Mathf.Abs(forwardSpeed)));
+
+        // Direksiyon anında değil kademeli döner, bırakınca da kademeli ortalanır
+        steerAngle = Mathf.MoveTowards(steerAngle, hInput * currentSteerRange, steerSpeed * Time.fixedDeltaTime);
+
+        float wheelMotor = 0f;
+        float wheelBrake = 0f;
+        if (Mathf.Abs(throttle) < 0.05f)
+        {
+            // Gaz yok: motor freni aracı yavaşça durdurur
+            wheelBrake = engineBrakeTorque;
+        }
+        else if (forwardSpeed * throttle < -0.5f)
+        {
+            // Gidiş yönünün tersine basılıyor: önce fren, durunca diğer yöne kalkar
+            wheelBrake = Mathf.Abs(throttle) * brakeTorque;
+        }
+        else
+        {
+            wheelMotor = -throttle * currentMotorTorque;
+        }
 
         foreach (var wheel in wheelList)
         {
@@ -157,16 +184,8 @@ public class frankMovement : NetworkBehaviour
                 wheel.wheelCollider.steerAngle = steerAngle;
             }
 
-            if (isAccelerating)
-            {
-                wheel.wheelCollider.motorTorque = vInput * currentMotorTorque;
-                wheel.wheelCollider.brakeTorque = 0;
-            }
-            else
-            {
-                wheel.wheelCollider.brakeTorque = Mathf.Abs(vInput) * brakeTorque * 100f;
-                wheel.wheelCollider.motorTorque = 0;
-            }
+            wheel.wheelCollider.motorTorque = wheelMotor;
+            wheel.wheelCollider.brakeTorque = wheelBrake;
         }
 
         SetIfChanged(networkSteerAngle, steerAngle, 0.25f);
@@ -183,9 +202,12 @@ public class frankMovement : NetworkBehaviour
 
     // Uzak client'ta araç kinematic olduğu için WheelCollider çalışmaz,
     // tekerlek dönüşünü aracın hareketinden hesaplıyoruz.
+    // Teker objeleri döndürülmüş ve negatif ölçekli; o yüzden süspansiyon ve direksiyon
+    // ekseni olarak teker objesinin değil aracın yukarı yönü kullanılıyor.
     void AnimationWheelsRemote()
     {
         if (Time.deltaTime <= 0f) return;
+        steerAngle = Mathf.Lerp(steerAngle, networkSteerAngle.Value, Time.deltaTime * 10f);
         Vector3 velocity = (transform.position - lastPosition) / Time.deltaTime;
         lastPosition = transform.position;
         float forwardSpeed = Vector3.Dot(transform.forward, velocity);
@@ -199,10 +221,11 @@ public class frankMovement : NetworkBehaviour
                 remoteWheelRoll[i] = Mathf.Repeat(remoteWheelRoll[i] + forwardSpeed / col.radius * Mathf.Rad2Deg * Time.deltaTime, 360f);
             }
 
-            float steer = wheel.axel == Axel.Rear ? networkSteerAngle.Value : 0f;
+            float steer = wheel.axel == Axel.Rear ? steerAngle : 0f;
             Transform t = col.transform;
-            Vector3 pos = t.TransformPoint(col.center) - t.up * (col.suspensionDistance * (1f - col.suspensionSpring.targetPosition));
-            Quaternion rot = t.rotation * Quaternion.Euler(0, steer, 0) * Quaternion.Euler(remoteWheelRoll[i], 0, 0);
+            float suspension = col.suspensionDistance * Mathf.Abs(t.lossyScale.y);
+            Vector3 pos = t.TransformPoint(col.center) - transform.up * (suspension * (1f - col.suspensionSpring.targetPosition));
+            Quaternion rot = Quaternion.AngleAxis(steer, transform.up) * t.rotation * Quaternion.Euler(remoteWheelRoll[i], 0, 0);
             wheel.wheelModel.transform.SetPositionAndRotation(pos, rot);
         }
     }
@@ -215,14 +238,12 @@ public class frankMovement : NetworkBehaviour
         hInput = canDrive ? -Input.GetAxis("Horizontal") : 0f;
         mouseX = Input.GetAxis("Mouse X") * lookSpeed;
         mouseY = Input.GetAxis("Mouse Y") * lookSpeed;
-        SetIfChanged(networkSteerInput, hInput, 0.02f);
     }
 
+    // Kabindeki direksiyon girdiyi değil tekerlerin gerçek açısını gösterir
     void UpdateSteering()
     {
-        float steer = IsOwner ? hInput : networkSteerInput.Value;
-        float rotationAmount = -steer * steeringRange * 4f;
-        direksiyon.transform.localRotation = direksiyonBaseRotation * Quaternion.Euler(0, 0, rotationAmount);
+        direksiyon.transform.localRotation = direksiyonBaseRotation * Quaternion.Euler(0, 0, -steerAngle * steeringWheelRatio);
     }
 
     void UpdateReelSpeed()
