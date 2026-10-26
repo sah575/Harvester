@@ -217,6 +217,7 @@ GameObject:
   - component: {fileID: 6309281521669473835}
   - component: {fileID: 1348962028834444809}
   - component: {fileID: 754276805194854860}
+  - component: {fileID: 5676162905154429743}
   m_Layer: 0
   m_Name: robo1
   m_TagString: Untagged
@@ -428,6 +429,21 @@ MonoBehaviour:
   UseRigidBodyForMotion: 0
   AutoUpdateKinematicState: 1
   AutoSetKinematicOnDespawn: 1
+--- !u!114 &5676162905154429743
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1389155798791199939}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f08c3f5509c2f28c794c8b13d0d8e2cc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  margin: 1
+  fallLimit: 20
 --- !u!1 &1883627355773959398
 GameObject:
   m_ObjectHideFlags: 0

@@ -49,6 +49,9 @@ public class lobby : NetworkBehaviour
 
     [SerializeField] private string gameSceneName = "world";
 
+    // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
+    public static string PendingStatus;
+
     private readonly NetworkList<LobbyPlayer> players = new NetworkList<LobbyPlayer>();
     private readonly Dictionary<ulong, string> pendingNames = new Dictionary<ulong, string>();
     private string hostPassword;
@@ -62,7 +65,13 @@ public class lobby : NetworkBehaviour
         robotButton.onClick.AddListener(() => RequestRoleRpc(false));
         startButton.onClick.AddListener(StartGame);
         leaveButton.onClick.AddListener(Leave);
-        ShowMenu("");
+
+        // Oyundan dönünce imleç kilitli kalmasın
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        ShowMenu(PendingStatus ?? "");
+        PendingStatus = null;
     }
 
     public override void OnDestroy()
@@ -79,6 +88,8 @@ public class lobby : NetworkBehaviour
         hostPassword = passwordInput.text;
         gameStarted = false;
         pendingNames.Clear();
+        MatchSettings.Players.Clear();
+        MatchSettings.RoomPassword = hostPassword;
 
         // 0.0.0.0'ı dinle ki aynı ağdaki diğer bilgisayarlar da bağlanabilsin
         nm.GetComponent<UnityTransport>().SetConnectionData("127.0.0.1", Port, "0.0.0.0");
@@ -170,9 +181,15 @@ public class lobby : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         players.OnListChanged += OnPlayersChanged;
+        SubscribeCallbacks();
 
         if (IsServer)
         {
+            // Tur sonunda lobiye dönülünce bu yeni bir lobby objesi; oda ayarlarını geri yükle
+            hostPassword = MatchSettings.RoomPassword;
+            gameStarted = false;
+            NetworkManager.ConnectionApprovalCallback = ApprovalCheck;
+
             players.Clear();
             foreach (var id in NetworkManager.ConnectedClientsIds) AddPlayer(id);
         }
@@ -250,12 +267,16 @@ public class lobby : NetworkBehaviour
     private void AddPlayer(ulong clientId)
     {
         if (IndexOf(clientId) >= 0) return;
-        pendingNames.TryGetValue(clientId, out string playerName);
+
+        // Önceki turdan dönen oyuncu ismini ve rolünü korur
+        MatchSettings.Players.TryGetValue(clientId, out var previous);
+        if (!pendingNames.TryGetValue(clientId, out string playerName)) playerName = previous.Name;
+
         players.Add(new LobbyPlayer
         {
             ClientId = clientId,
             Name = new FixedString32Bytes(string.IsNullOrEmpty(playerName) ? "Oyuncu" : playerName),
-            IsHarvester = false,
+            IsHarvester = previous.IsHarvester && HarvesterIndex() < 0,
         });
     }
 

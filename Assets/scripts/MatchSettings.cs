@@ -10,4 +10,7 @@ public static class MatchSettings
     }
 
     public static readonly Dictionary<ulong, PlayerInfo> Players = new Dictionary<ulong, PlayerInfo>();
+
+    // Tur bitip lobiye dönülünce oda aynı şifreyle açık kalsın
+    public static string RoomPassword = "";
 }

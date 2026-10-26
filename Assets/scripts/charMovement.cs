@@ -39,10 +39,12 @@ public class CharMovement : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        inputX = Input.GetAxis("Horizontal");
-        inputZ = Input.GetAxis("Vertical");
+        // Geri sayım ve bitiş ekranında yürümek kilitli, etrafa bakmak serbest
+        bool canMove = GameManager.InputAllowed;
+        inputX = canMove ? Input.GetAxis("Horizontal") : 0f;
+        inputZ = canMove ? Input.GetAxis("Vertical") : 0f;
         isRunning = Input.GetKey(KeyCode.LeftShift);
-        if (Input.GetKeyDown(KeyCode.Space)) jumpRequested = true;
+        if (canMove && Input.GetKeyDown(KeyCode.Space)) jumpRequested = true;
 
         animator.SetFloat("run", Mathf.Abs(inputZ));
         Look();

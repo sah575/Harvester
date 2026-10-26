@@ -206,8 +206,10 @@ public class frankMovement : NetworkBehaviour
 
     void GetInput()
     {
-        vInput = -Input.GetAxis("Vertical");
-        hInput = -Input.GetAxis("Horizontal");
+        // Geri sayım ve bitiş ekranında sürüş kilitli, etrafa bakmak serbest
+        bool canDrive = GameManager.InputAllowed;
+        vInput = canDrive ? -Input.GetAxis("Vertical") : 0f;
+        hInput = canDrive ? -Input.GetAxis("Horizontal") : 0f;
         mouseX = Input.GetAxis("Mouse X") * lookSpeed;
         mouseY = Input.GetAxis("Mouse Y") * lookSpeed;
         SetIfChanged(networkSteerInput, hInput, 0.02f);
@@ -222,7 +224,7 @@ public class frankMovement : NetworkBehaviour
 
     void UpdateReelSpeed()
     {
-        if (Input.GetMouseButton(0))
+        if (Input.GetMouseButton(0) && GameManager.InputAllowed)
         {
             currentSpeed = Mathf.Lerp(currentSpeed, maxRotationSpeed, Time.deltaTime * acceleration);
         }

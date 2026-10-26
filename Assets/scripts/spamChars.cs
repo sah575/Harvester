@@ -38,6 +38,7 @@ public class SpamChars : MonoBehaviour
     private void SpawnCharacters(List<ulong> clientIds)
     {
         ulong harvesterId = FindHarvester(clientIds);
+        var robotIds = new List<ulong>();
         int robotIndex = 0;
 
         foreach (var clientId in clientIds)
@@ -56,12 +57,16 @@ public class SpamChars : MonoBehaviour
                 characterPrefab = prefabs.Count > 1 ? prefabs[1 + robotIndex % (prefabs.Count - 1)] : prefabs[0];
                 spawnPoint = spawnPoints[(1 + robotIndex) % spawnPoints.Length];
                 robotIndex++;
+                robotIds.Add(clientId);
             }
 
             // Karakteri spawn et
             GameObject character = Instantiate(characterPrefab, spawnPoint.position, spawnPoint.rotation);
             character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId); // NetworkObject'i client ile ilişkilendir
         }
+
+        var gameManager = GetComponent<GameManager>();
+        if (gameManager != null) gameManager.BeginMatch(harvesterId, robotIds);
     }
 
     // Lobide Harvester'ı seçen oyuncu. Lobi atlanmışsa (doğrudan test) host Harvester olur.
