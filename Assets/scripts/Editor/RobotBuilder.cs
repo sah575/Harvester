@@ -102,7 +102,7 @@ public static class RobotBuilder
         return copy;
     }
 
-    // Eski deneme.controller ile aynı mantık: "run" > 0.1 ise koşu
+    // "run" > 0.1 ise koşu (CharMovement ileri girdiyi yazar)
     static AnimatorController BuildController(AnimationClip idle, AnimationClip run)
     {
         AssetDatabase.DeleteAsset(ControllerPath);
