@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using Unity.Collections;
@@ -73,6 +74,64 @@ public class lobby : NetworkBehaviour
 
         ShowMenu(PendingStatus ?? "");
         PendingStatus = null;
+    }
+
+    // Development build'de komut satırından otomatik test (editörde çalışmaz):
+    //   -autoHost [-autoHarvester] [-autoStart N] [-autoRounds R]   oda kur, istenirse Harvester ol,
+    //                                                                N oyuncu olunca başlat, R tur oyna
+    //   -autoJoin <adres> [-autoHarvester]                           odaya bağlan, istenirse Harvester'ı seç
+    private static bool autoTestStarted;
+    private static int autoStartPlayers, autoRoundsLeft;
+
+    private void Start()
+    {
+        if (!Debug.isDebugBuild || Application.isEditor) return;
+
+        // Tur sonunda lobi yeniden yüklendi: oda zaten açık, sıradaki turu başlat
+        if (autoTestStarted)
+        {
+            if (autoRoundsLeft > 0) StartCoroutine(AutoStartWhenReady());
+            return;
+        }
+
+        var args = Environment.GetCommandLineArgs();
+        bool host = Array.IndexOf(args, "-autoHost") >= 0;
+        int join = Array.IndexOf(args, "-autoJoin");
+        if (!host && join < 0) return;
+
+        autoTestStarted = true;
+        AutoTestReporter.Create();
+        autoStartPlayers = host ? IntArg(args, "-autoStart", 0) : 0;
+        autoRoundsLeft = autoStartPlayers > 0 ? IntArg(args, "-autoRounds", 1) : 0;
+        StartCoroutine(AutoTest(host, join >= 0 && join + 1 < args.Length ? args[join + 1] : "127.0.0.1",
+            Array.IndexOf(args, "-autoHarvester") >= 0));
+    }
+
+    private static int IntArg(string[] args, string name, int fallback)
+    {
+        int i = Array.IndexOf(args, name);
+        return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out int value) ? value : fallback;
+    }
+
+    private IEnumerator AutoTest(bool host, string address, bool harvester)
+    {
+        nameInput.text = host ? "TestHost" : "TestClient";
+        addressInput.text = address;
+        if (host) OnHostClicked();
+        else OnJoinClicked();
+
+        while (!IsSpawned) yield return null;
+        if (harvester) RequestRoleRpc(true);
+        if (autoRoundsLeft > 0) yield return AutoStartWhenReady();
+    }
+
+    private IEnumerator AutoStartWhenReady()
+    {
+        while (!IsSpawned || !CanStart(out _) || players.Count < autoStartPlayers) yield return null;
+        yield return new WaitForSeconds(1f);
+        autoRoundsLeft--;
+        Debug.Log($"[AutoTest] Oyun başlatılıyor, oyuncu: {players.Count}, kalan tur: {autoRoundsLeft}");
+        StartGame();
     }
 
     public override void OnDestroy()
