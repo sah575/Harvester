@@ -739,6 +739,8 @@ GameObject:
   - component: {fileID: 2497993681406803765}
   - component: {fileID: 2288875382709560848}
   - component: {fileID: 4369925397452666802}
+  - component: {fileID: 4674661953329428592}
+  - component: {fileID: 3090575792319233782}
   m_Layer: 0
   m_Name: FRANKV2.1
   m_TagString: Destroyer
@@ -939,6 +941,35 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   margin: 1
   fallLimit: 20
+--- !u!114 &4674661953329428592
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1669803391958075011}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e8ec5657ecd5f9f683fe617f2189cdc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  interval: 0.1
+  minReelSpeed: 40
+  padding: 0.5
+--- !u!114 &3090575792319233782
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1669803391958075011}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a5c87f2cf8d1c1acb3cc0ee36f70efb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  radius: 7
 --- !u!1 &1802091854406433756
 GameObject:
   m_ObjectHideFlags: 0

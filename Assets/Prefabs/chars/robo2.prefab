@@ -303,6 +303,7 @@ GameObject:
   - component: {fileID: 1031450245426436753}
   - component: {fileID: 9022097837390017499}
   - component: {fileID: 7965839092773152505}
+  - component: {fileID: 9222530851694015080}
   m_Layer: 0
   m_Name: robo2
   m_TagString: Untagged
@@ -529,6 +530,19 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   margin: 1
   fallLimit: 20
+--- !u!114 &9222530851694015080
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3912964114273432838}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a5c87f2cf8d1c1acb3cc0ee36f70efb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  radius: 2.5
 --- !u!1 &4015763329587156771
 GameObject:
   m_ObjectHideFlags: 0

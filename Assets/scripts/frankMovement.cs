@@ -47,6 +47,9 @@ public class frankMovement : NetworkBehaviour
 
     public Camera fpcam;
 
+    // Makaranın şu anki dönüş hızı (derece/sn); sahibi için yerel değer, diğerleri için ağdan gelen
+    public float ReelSpeed => currentSpeed;
+
     public enum Axel
     {
         Front,

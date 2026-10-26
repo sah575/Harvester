@@ -44,6 +44,7 @@ public class GameManager : NetworkBehaviour
     public int AliveRobots => aliveRobots.Value;
     public int TotalRobots => totalRobots.Value;
     public float MatchSeconds => matchSeconds;
+    public ulong HarvesterClientId => harvesterClientId.Value;
     public bool IsLocalHarvester => IsSpawned && NetworkManager.LocalClientId == harvesterClientId.Value;
     public float RemainingSeconds => IsSpawned ? Mathf.Max(0f, (float)(phaseEndTime.Value - NetworkManager.ServerTime.Time)) : 0f;
 
