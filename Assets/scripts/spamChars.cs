@@ -1,44 +1,86 @@
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
-public class SpamChars : NetworkBehaviour
+public class SpamChars : MonoBehaviour
 {
-    [SerializeField] private Transform[] spawnPoints; // Spawn noktalar�
-    public List<GameObject> prefabs; // Karakter prefab'lar� listesi
+    [SerializeField] private Transform[] spawnPoints; // Spawn noktaları
+    public List<GameObject> prefabs; // Karakter prefab'ları listesi. 0: Harvester, geri kalanı yayalar
 
-    private void Start()
+    private void Awake()
     {
-        if (IsServer)
+        var nm = NetworkManager.Singleton;
+        if (nm == null || !nm.IsServer) return;
+
+        // Tüm client'lar sahneyi yükleyince spawn et.
+        // Start yerine Awake: tek kişilik host'ta olay Start'tan önce tetikleniyor.
+        nm.SceneManager.OnLoadEventCompleted += OnLoadEventCompleted;
+    }
+
+    private void OnDestroy()
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm != null && nm.SceneManager != null)
         {
-            SpawnCharacters();
+            nm.SceneManager.OnLoadEventCompleted -= OnLoadEventCompleted;
         }
     }
 
-    private void SpawnCharacters()
+    private void OnLoadEventCompleted(string sceneName, LoadSceneMode loadSceneMode, List<ulong> clientsCompleted, List<ulong> clientsTimedOut)
     {
-        
+        if (sceneName != gameObject.scene.name) return;
+        NetworkManager.Singleton.SceneManager.OnLoadEventCompleted -= OnLoadEventCompleted;
+        clientsCompleted.Sort(); // Host (id 0) her zaman ilk sırada olsun
+        SpawnCharacters(clientsCompleted);
+    }
 
-        for (int i = 0; i < NetworkManager.Singleton.ConnectedClients.Count; i++)
+    private void SpawnCharacters(List<ulong> clientIds)
+    {
+        ulong harvesterId = FindHarvester(clientIds);
+        var robotIds = new List<ulong>();
+        int robotIndex = 0;
+
+        foreach (var clientId in clientIds)
         {
-            var clientId = NetworkManager.Singleton.ConnectedClientsIds[i];
-            var spawnPoint = spawnPoints[i % spawnPoints.Length];
-
             GameObject characterPrefab;
-            characterPrefab = prefabs[i];
-            /*if (!hasSpawnedHarvester && i == 0)
+            Transform spawnPoint;
+
+            // Spawn noktası 0 Harvester'ın, diğerleri robotların
+            if (clientId == harvesterId)
             {
-                characterPrefab = prefabs[0]; // 0: Harvester
-                hasSpawnedHarvester = true; // Harvester'� spawn ettik
+                characterPrefab = prefabs[0];
+                spawnPoint = spawnPoints[0];
             }
             else
             {
-                
-            }*/
+                characterPrefab = prefabs.Count > 1 ? prefabs[1 + robotIndex % (prefabs.Count - 1)] : prefabs[0];
+                spawnPoint = spawnPoints[(1 + robotIndex) % spawnPoints.Length];
+                robotIndex++;
+                robotIds.Add(clientId);
+            }
 
             // Karakteri spawn et
             GameObject character = Instantiate(characterPrefab, spawnPoint.position, spawnPoint.rotation);
-            character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId); // NetworkObject'i client ile ili�kilendir
+            // destroyWithScene: tur bitip Lobby yüklenince karakterler de silinsin (varsayılanda NGO onları yeni sahneye taşıyor)
+            character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId, destroyWithScene: true);
+
+            // Hareket owner-authority: konumu sahibinin client'ı belirliyor, spawn noktasını ona açıkça bildir
+            if (character.TryGetComponent(out BoundaryGuard guard)) guard.PlaceAtSpawnRpc(spawnPoint.position, spawnPoint.rotation);
         }
+
+        var gameManager = GetComponent<GameManager>();
+        if (gameManager != null) gameManager.BeginMatch(harvesterId, robotIds);
+    }
+
+    // Lobide Harvester'ı seçen oyuncu. Lobi atlanmışsa (doğrudan test) host Harvester olur.
+    // Lobiden kimse seçmeden gelindiyse (tek kişilik robot testi) Harvester yoktur.
+    private static ulong FindHarvester(List<ulong> clientIds)
+    {
+        foreach (var pair in MatchSettings.Players)
+        {
+            if (pair.Value.IsHarvester && clientIds.Contains(pair.Key)) return pair.Key;
+        }
+        return MatchSettings.Players.Count > 0 ? ulong.MaxValue : clientIds[0];
     }
 }
