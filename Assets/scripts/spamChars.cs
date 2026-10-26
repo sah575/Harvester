@@ -62,7 +62,8 @@ public class SpamChars : MonoBehaviour
 
             // Karakteri spawn et
             GameObject character = Instantiate(characterPrefab, spawnPoint.position, spawnPoint.rotation);
-            character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId); // NetworkObject'i client ile ilişkilendir
+            // destroyWithScene: tur bitip Lobby yüklenince karakterler de silinsin (varsayılanda NGO onları yeni sahneye taşıyor)
+            character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId, destroyWithScene: true);
 
             // Hareket owner-authority: konumu sahibinin client'ı belirliyor, spawn noktasını ona açıkça bildir
             if (character.TryGetComponent(out BoundaryGuard guard)) guard.PlaceAtSpawnRpc(spawnPoint.position, spawnPoint.rotation);

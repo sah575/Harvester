@@ -254,7 +254,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 4239407727
+  GlobalObjectIdHash: 1790802257
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -282,7 +282,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
-  speed: 12
+  walkSpeed: 12
+  runSpeed: 20
+  sprintDrain: 0.2
+  jumpCost: 0.1
+  regenDelay: 1
+  regenMoving: 0.125
+  regenIdle: 0.2
+  exhaustedUntil: 0.35
+  shatterSpeed: 9
+  shatterLift: 6
+  debrisLifetime: 8
   groundCheck: {fileID: 9217858073136032934}
   groundLayerMask:
     serializedVersion: 2

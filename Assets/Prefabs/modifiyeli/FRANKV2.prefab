@@ -1277,7 +1277,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 61816602
+  GlobalObjectIdHash: 2412772784
   InScenePlacedSourceGlobalObjectIdHash: 2412772784
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -1432,6 +1432,9 @@ MonoBehaviour:
   interval: 0.1
   minReelSpeed: 40
   padding: 0.5
+  killHeight: 1.2
+  serverKillTolerance: 3
+  killRetryDelay: 0.5
 --- !u!114 &6585304697315314656
 MonoBehaviour:
   m_ObjectHideFlags: 0
