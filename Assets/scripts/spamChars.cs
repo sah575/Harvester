@@ -37,18 +37,40 @@ public class SpamChars : MonoBehaviour
 
     private void SpawnCharacters(List<ulong> clientIds)
     {
-        for (int i = 0; i < clientIds.Count; i++)
-        {
-            var spawnPoint = spawnPoints[i % spawnPoints.Length];
+        ulong harvesterId = FindHarvester(clientIds);
+        int robotIndex = 0;
 
-            // İlk oyuncu (host) Harvester, diğerleri yaya prefab'ları arasında döner
-            GameObject characterPrefab = i == 0 || prefabs.Count == 1
-                ? prefabs[0]
-                : prefabs[1 + (i - 1) % (prefabs.Count - 1)];
+        foreach (var clientId in clientIds)
+        {
+            GameObject characterPrefab;
+            Transform spawnPoint;
+
+            // Spawn noktası 0 Harvester'ın, diğerleri robotların
+            if (clientId == harvesterId)
+            {
+                characterPrefab = prefabs[0];
+                spawnPoint = spawnPoints[0];
+            }
+            else
+            {
+                characterPrefab = prefabs.Count > 1 ? prefabs[1 + robotIndex % (prefabs.Count - 1)] : prefabs[0];
+                spawnPoint = spawnPoints[(1 + robotIndex) % spawnPoints.Length];
+                robotIndex++;
+            }
 
             // Karakteri spawn et
             GameObject character = Instantiate(characterPrefab, spawnPoint.position, spawnPoint.rotation);
-            character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientIds[i]); // NetworkObject'i client ile ilişkilendir
+            character.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId); // NetworkObject'i client ile ilişkilendir
         }
+    }
+
+    // Lobide Harvester'ı seçen oyuncu. Lobi atlanmışsa (doğrudan test) host Harvester olur.
+    private static ulong FindHarvester(List<ulong> clientIds)
+    {
+        foreach (var pair in MatchSettings.Players)
+        {
+            if (pair.Value.IsHarvester && clientIds.Contains(pair.Key)) return pair.Key;
+        }
+        return clientIds[0];
     }
 }
