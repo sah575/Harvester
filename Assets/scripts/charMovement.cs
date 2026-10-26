@@ -24,6 +24,11 @@ public class CharMovement : NetworkBehaviour
     public float regenIdle = 0.2f; // Dururken (saklanırken) 5 sn'de dolar
     public float exhaustedUntil = 0.35f; // Sıfırlanınca bu seviyeye kadar depar atılamaz
 
+    [Header("Parçalanma")]
+    public float shatterSpeed = 9f; // Parçaların Harvester'dan uzağa fırlama hızı
+    public float shatterLift = 6f; // Yukarı fırlama hızı (en fazla)
+    public float debrisLifetime = 8f;
+
     // Sadece sunucu yazar. Ölen robot gizlenir, sahibi izleyici kamerasına geçer.
     private readonly NetworkVariable<bool> dead = new NetworkVariable<bool>(false);
     public bool IsDead => dead.Value;
@@ -97,7 +102,7 @@ public class CharMovement : NetworkBehaviour
     {
         DiedAt = Time.time;
         IsSprinting = false;
-        foreach (var r in renderers) r.enabled = false;
+        Shatter();
         foreach (var c in colliders) c.enabled = false;
         foreach (var bender in GetComponentsInChildren<CropBender>()) bender.enabled = false;
         if (TryGetComponent(out BoundaryGuard guard)) guard.enabled = false;
@@ -110,6 +115,36 @@ public class CharMovement : NetworkBehaviour
         // Kamerayı gövdeden ayırıp izleyiciye çevir
         cam.transform.SetParent(null, true);
         cam.gameObject.AddComponent<SpectatorCamera>();
+    }
+
+    // Robotun parçalarını kemiklerden koparıp fizikle saçar. Sadece görsel: her client kendi
+    // ekranında, o anki animasyon pozundan başlatır; ağdan senkronlanmaz.
+    private void Shatter()
+    {
+        var harvester = FindFirstObjectByType<frankMovement>();
+        Vector3 from = harvester != null ? harvester.transform.position : transform.position - transform.forward;
+
+        foreach (var r in renderers)
+        {
+            if (!(r is MeshRenderer))
+            {
+                r.enabled = false;
+                continue;
+            }
+
+            Transform piece = r.transform;
+            piece.SetParent(null, true);
+            piece.gameObject.AddComponent<BoxCollider>(); // Mesh sınırına göre boyutlanır
+            var body = piece.gameObject.AddComponent<Rigidbody>();
+            body.mass = 2f;
+
+            Vector3 away = piece.position - from;
+            away.y = 0f;
+            body.linearVelocity = away.normalized * shatterSpeed * Random.Range(0.6f, 1.4f)
+                                + Vector3.up * Random.Range(shatterLift * 0.4f, shatterLift);
+            body.angularVelocity = Random.insideUnitSphere * 12f;
+            Destroy(piece.gameObject, debrisLifetime + Random.Range(0f, 2f));
+        }
     }
 
     // Collider'ların birleşik dünya sınırı (makara tespiti için)
