@@ -16,6 +16,7 @@ public class GameHUD : MonoBehaviour
 
     const string HarvesterColor = "#E03A2F";
     const string RobotColor = "#8FB3D9";
+    const float DeathMessageSeconds = 5f;
 
     private void Update()
     {
@@ -42,8 +43,19 @@ public class GameHUD : MonoBehaviour
 
             case MatchPhase.Playing:
                 timerText.text = remaining <= 30f ? $"<color={HarvesterColor}>{FormatTime(remaining)}</color>" : FormatTime(remaining);
-                centerText.text = gm.MatchSeconds - remaining < 1.5f ? "BAŞLA!" : "";
-                subText.text = "";
+                var localRobot = CharMovement.Local;
+                if (localRobot != null && localRobot.IsDead)
+                {
+                    // Ölünce birkaç saniye mesaj ve izleyici kontrolleri, sonra ekran temiz
+                    bool recent = Time.time - localRobot.DiedAt < DeathMessageSeconds;
+                    centerText.text = recent ? $"<color={HarvesterColor}>ÖLDÜN</color>" : "";
+                    subText.text = recent ? "İzleyici modu\nSol tık: sonraki oyuncu  ·  Boşluk: serbest kamera" : "";
+                }
+                else
+                {
+                    centerText.text = gm.MatchSeconds - remaining < 1.5f ? "BAŞLA!" : "";
+                    subText.text = "";
+                }
                 break;
 
             case MatchPhase.Ended:
@@ -57,7 +69,7 @@ public class GameHUD : MonoBehaviour
     private void UpdateStamina(bool visible)
     {
         var robot = CharMovement.Local;
-        bool show = visible && robot != null;
+        bool show = visible && robot != null && !robot.IsDead;
         if (staminaRoot.activeSelf != show) staminaRoot.SetActive(show);
         if (!show) return;
 

@@ -93,7 +93,7 @@ public class GameManager : NetworkBehaviour
         SetPhase(MatchPhase.Countdown, countdownSeconds);
     }
 
-    // Faz 4'te makara bir robotu öldürünce çağrılacak
+    // Makara bir robotu biçince CropCutter çağırır
     public void ReportRobotDeath(ulong clientId)
     {
         if (!IsServer || phase.Value != MatchPhase.Playing) return;

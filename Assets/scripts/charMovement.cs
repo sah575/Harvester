@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -9,6 +10,8 @@ public class CharMovement : NetworkBehaviour
 {
     // Sahibi olduğumuz robot (HUD stamina barı için)
     public static CharMovement Local { get; private set; }
+    // Sahnedeki bütün robotlar (makara tespiti ve izleyici kamerası için)
+    public static readonly List<CharMovement> All = new List<CharMovement>();
 
     public float walkSpeed = 12f;
     public float runSpeed = 20f;
@@ -20,6 +23,13 @@ public class CharMovement : NetworkBehaviour
     public float regenMoving = 0.125f; // Yürürken 8 sn'de dolar
     public float regenIdle = 0.2f; // Dururken (saklanırken) 5 sn'de dolar
     public float exhaustedUntil = 0.35f; // Sıfırlanınca bu seviyeye kadar depar atılamaz
+
+    // Sadece sunucu yazar. Ölen robot gizlenir, sahibi izleyici kamerasına geçer.
+    private readonly NetworkVariable<bool> dead = new NetworkVariable<bool>(false);
+    public bool IsDead => dead.Value;
+    public float DiedAt { get; private set; }
+    private Collider[] colliders;
+    private Renderer[] renderers;
 
     public float Stamina { get; private set; } = 1f;
     public bool Exhausted { get; private set; }
@@ -47,6 +57,8 @@ public class CharMovement : NetworkBehaviour
         animator = GetComponent<Animator>();
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true;
+        colliders = GetComponentsInChildren<Collider>();
+        renderers = GetComponentsInChildren<Renderer>();
     }
 
     public override void OnNetworkSpawn()
@@ -57,16 +69,67 @@ public class CharMovement : NetworkBehaviour
             Local = this;
             Cursor.lockState = CursorLockMode.Locked;
         }
+        All.Add(this);
+        dead.OnValueChanged += OnDeadChanged;
+        if (dead.Value) ApplyDeath();
     }
 
     public override void OnNetworkDespawn()
     {
         if (Local == this) Local = null;
+        All.Remove(this);
+        dead.OnValueChanged -= OnDeadChanged;
+    }
+
+    // Sunucu çağırır (makara robotu biçti). Robot sayacını GameManager düşürür.
+    public void Kill()
+    {
+        if (!IsServer || dead.Value) return;
+        dead.Value = true;
+    }
+
+    private void OnDeadChanged(bool previous, bool current)
+    {
+        if (current) ApplyDeath();
+    }
+
+    private void ApplyDeath()
+    {
+        DiedAt = Time.time;
+        IsSprinting = false;
+        foreach (var r in renderers) r.enabled = false;
+        foreach (var c in colliders) c.enabled = false;
+        foreach (var bender in GetComponentsInChildren<CropBender>()) bender.enabled = false;
+        if (TryGetComponent(out BoundaryGuard guard)) guard.enabled = false;
+        animator.enabled = false;
+
+        if (!IsOwner) return;
+        rb.linearVelocity = Vector3.zero;
+        rb.isKinematic = true;
+
+        // Kamerayı gövdeden ayırıp izleyiciye çevir
+        cam.transform.SetParent(null, true);
+        cam.gameObject.AddComponent<SpectatorCamera>();
+    }
+
+    // Collider'ların birleşik dünya sınırı (makara tespiti için)
+    public bool TryGetBounds(out Bounds bounds)
+    {
+        bounds = default;
+        bool any = false;
+        foreach (var c in colliders)
+        {
+            if (!c.enabled) continue;
+            if (any) bounds.Encapsulate(c.bounds);
+            else bounds = c.bounds;
+            any = true;
+        }
+        return any;
     }
 
     private void Update()
     {
-        if (!IsOwner) return;
+        if (!IsOwner || IsDead) return;
 
         // Geri sayım ve bitiş ekranında yürümek kilitli, etrafa bakmak serbest
         bool canMove = GameManager.InputAllowed;
@@ -81,7 +144,7 @@ public class CharMovement : NetworkBehaviour
 
     private void FixedUpdate()
     {
-        if (!IsOwner) return;
+        if (!IsOwner || IsDead) return;
         Move();
     }
 
