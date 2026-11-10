@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Yerelde eski SDK ile denemek için: -p:RelayTfm=net6.0 -->
+    <RelayTfm Condition="'$(RelayTfm)' == ''">net8.0</RelayTfm>
+    <TargetFramework>$(RelayTfm)</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HarvesterRelay</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Küçük ve az bellekli bir servis: sunucu GC'si gereksiz. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LiteNetLib" Version="1.3.5" />
+    <!-- Protokol Unity ile ortak: tek kaynak Assets altında. -->
+    <Compile Include="../../Assets/scripts/Net/RelayProtocol.cs" Link="RelayProtocol.cs" />
+  </ItemGroup>
+
+</Project>
