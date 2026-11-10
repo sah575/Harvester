@@ -1,4 +1,6 @@
+using Harvester.Net;
 using TMPro;
+using Unity.Netcode;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -50,28 +52,52 @@ public static class LobbyUIBuilder
         Stretch((RectTransform)background.transform);
 
         // --- Ana menü ---
-        var menu = CreatePanel("MenuPanel", root, new Vector2(560, 720));
+        var menu = CreatePanel("MenuPanel", root, new Vector2(560, 0));
         CreateText("Title", menu, "HARVESTER", 72, FontStyles.Bold, AccentColor, 90);
         CreateText("Subtitle", menu, "1 Harvester  vs  3 Robot", 24, FontStyles.Normal, MutedTextColor, 36);
-        CreateSpacer(menu, 20);
+        CreateSpacer(menu, 12);
+        var tabRow = CreateRow(menu, 52);
+        var onlineTab = CreateTab(tabRow, resources, "ONLINE");
+        var lanTab = CreateTab(tabRow, resources, "LAN");
+        CreateSpacer(menu, 4);
         CreateText("NameLabel", menu, "İsim", 22, FontStyles.Normal, MutedTextColor, 30);
         var nameInput = CreateInput(menu, resources, "İsmini gir...", TMP_InputField.ContentType.Standard);
         nameInput.characterLimit = 16;
-        CreateText("PasswordLabel", menu, "Oda şifresi", 22, FontStyles.Normal, MutedTextColor, 30);
-        var passwordInput = CreateInput(menu, resources, "Şifre (boş olabilir)", TMP_InputField.ContentType.Password);
-        CreateText("AddressLabel", menu, "Adres (katılırken)", 22, FontStyles.Normal, MutedTextColor, 30);
-        var addressInput = CreateInput(menu, resources, "127.0.0.1", TMP_InputField.ContentType.Standard);
+
+        // Online: davet koduyla relay üzerinden
+        var onlineFields = CreateGroup(menu, "OnlineFields");
+        CreateText("CodeLabel", onlineFields, "Davet kodu (katılırken)", 22, FontStyles.Normal, MutedTextColor, 30);
+        var codeInput = CreateInput(onlineFields, resources, "ör. K7M2QX", TMP_InputField.ContentType.Standard);
+        codeInput.characterLimit = RelayProtocol.CodeLength + 2;
+        CreateText("OnlineHint", onlineFields, "Oda kuran bir kod alır; arkadaşların o kodla katılır.", 18, FontStyles.Italic, MutedTextColor, 26);
+
+        // LAN: aynı ağda IP ile
+        var lanFields = CreateGroup(menu, "LanFields");
+        CreateText("PasswordLabel", lanFields, "Oda şifresi", 22, FontStyles.Normal, MutedTextColor, 30);
+        var passwordInput = CreateInput(lanFields, resources, "Şifre (boş olabilir)", TMP_InputField.ContentType.Password);
+        CreateText("AddressLabel", lanFields, "Adres (katılırken)", 22, FontStyles.Normal, MutedTextColor, 30);
+        var addressInput = CreateInput(lanFields, resources, "127.0.0.1", TMP_InputField.ContentType.Standard);
         addressInput.text = "127.0.0.1";
+        lanFields.gameObject.SetActive(false);
         CreateSpacer(menu, 16);
         var hostButton = CreateButton(menu, resources, "ODA KUR", AccentColor);
         var joinButton = CreateButton(menu, resources, "ODAYA KATIL", ButtonColor);
         var menuStatus = CreateText("Status", menu, "", 22, FontStyles.Normal, new Color(0.95f, 0.55f, 0.45f), 60);
 
         // --- Oda ---
-        var room = CreatePanel("RoomPanel", root, new Vector2(760, 720));
+        var room = CreatePanel("RoomPanel", root, new Vector2(760, 0));
         CreateText("Title", room, "ODA", 56, FontStyles.Bold, TextColor, 72);
         CreateText("Subtitle", room, "1 kişi Harvester'ı sürer, diğerleri robot olarak kaçar", 22, FontStyles.Normal, MutedTextColor, 34);
-        CreateSpacer(room, 12);
+        CreateSpacer(room, 6);
+        var codeRow = CreateRow(room, 60);
+        codeRow.name = "CodeRow";
+        codeRow.GetComponent<HorizontalLayoutGroup>().childForceExpandWidth = false;
+        var roomCodeText = CreateText("CodeText", codeRow, "Davet kodu alınıyor...", 34, FontStyles.Normal, TextColor, 60);
+        roomCodeText.alignment = TextAlignmentOptions.MidlineLeft;
+        roomCodeText.GetComponent<LayoutElement>().flexibleWidth = 1;
+        var copyButton = CreateButton(codeRow, resources, "KOPYALA", ButtonColor);
+        copyButton.GetComponent<LayoutElement>().preferredWidth = 180;
+        CreateSpacer(room, 6);
         var slots = new TMP_Text[lobby.MaxPlayers];
         for (int i = 0; i < slots.Length; i++)
         {
@@ -112,7 +138,29 @@ public static class LobbyUIBuilder
         so.FindProperty("startButton").objectReferenceValue = startButton;
         so.FindProperty("leaveButton").objectReferenceValue = leaveButton;
         so.FindProperty("roomStatusText").objectReferenceValue = roomStatus;
+        so.FindProperty("onlineTabButton").objectReferenceValue = onlineTab;
+        so.FindProperty("lanTabButton").objectReferenceValue = lanTab;
+        so.FindProperty("onlineFields").objectReferenceValue = onlineFields.gameObject;
+        so.FindProperty("lanFields").objectReferenceValue = lanFields.gameObject;
+        so.FindProperty("codeInput").objectReferenceValue = codeInput;
+        so.FindProperty("roomCodeRow").objectReferenceValue = codeRow.gameObject;
+        so.FindProperty("roomCodeText").objectReferenceValue = roomCodeText;
+        so.FindProperty("copyCodeButton").objectReferenceValue = copyButton;
         so.ApplyModifiedProperties();
+
+        // Online oyun için NetworkManager'da relay transport'u da bulunsun (LAN için UnityTransport kalır).
+        var nm = Object.FindFirstObjectByType<NetworkManager>(FindObjectsInactive.Include);
+        if (nm != null && nm.GetComponent<RelayTransport>() == null)
+        {
+            Undo.AddComponent<RelayTransport>(nm.gameObject);
+            Debug.Log("NetworkManager'a RelayTransport eklendi.");
+        }
+        // Ping göstergesi ve yapay gecikme kısayolları
+        if (nm != null && nm.GetComponent<NetStatsHUD>() == null)
+        {
+            Undo.AddComponent<NetStatsHUD>(nm.gameObject);
+            Debug.Log("NetworkManager'a NetStatsHUD eklendi.");
+        }
 
         EditorSceneManager.MarkSceneDirty(lobbyComponent.gameObject.scene);
         Debug.Log("Lobby UI yeniden kuruldu.");
@@ -133,7 +181,34 @@ public static class LobbyUIBuilder
         layout.childControlHeight = true;
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = false;
+
+        // Yükseklik içeriğe göre (Online/LAN alanları farklı uzunlukta)
+        var fitter = panel.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         return rect;
+    }
+
+    static RectTransform CreateGroup(Transform parent, string name)
+    {
+        var go = new GameObject(name, typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        var layout = go.AddComponent<VerticalLayoutGroup>();
+        layout.spacing = 10;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+        return (RectTransform)go.transform;
+    }
+
+    // Seçili sekme pasif (interactable=false) olur ve vurgu renginde görünür.
+    static Button CreateTab(Transform parent, TMP_DefaultControls.Resources resources, string label)
+    {
+        var button = CreateButton(parent, resources, label, ButtonColor);
+        var colors = button.colors;
+        colors.disabledColor = AccentColor;
+        button.colors = colors;
+        return button;
     }
 
     static RectTransform CreateRow(Transform parent, float height)
