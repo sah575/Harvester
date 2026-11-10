@@ -155,8 +155,20 @@ public class GameManager : NetworkBehaviour
     // Host oyunu kapattı ya da bağlantı koptu: lobiye kendimiz dönüyoruz
     private void OnLocalClientStopped(bool wasHost)
     {
-        if (wasHost) return;
-        lobby.PendingStatus = "Host ile bağlantı koptu.";
+        if (wasHost)
+        {
+            // Host normalde oyunu kapatmaz (tur sonu lobiye sahne yüklemeyle dönülür);
+            // durduysa relay bağlantısı kopmuştur.
+            var relay = NetworkManager.Singleton != null
+                ? NetworkManager.Singleton.NetworkConfig.NetworkTransport as Harvester.Net.RelayTransport
+                : null;
+            if (relay == null || string.IsNullOrEmpty(relay.LastErrorMessage)) return;
+            lobby.PendingStatus = relay.LastErrorMessage;
+        }
+        else
+        {
+            lobby.PendingStatus = lobby.DescribeDisconnect("Host ile bağlantı koptu.");
+        }
         SceneManager.LoadScene(lobbySceneName);
     }
 }

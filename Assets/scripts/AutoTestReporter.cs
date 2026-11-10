@@ -8,6 +8,13 @@ using UnityEngine.SceneManagement;
 // Sahne değişse de yaşar, birkaç saniyede bir oyunun durumunu Player.log'a yazar.
 //   -autoKill S   (host) her tur başladıktan S sn sonra robotları sunucudan öldürür (makara tespiti hariç ölüm yolunu dener)
 //   -autoShot     öldürmeden 0.5 ve 2 sn sonra ekran görüntüsü alır (Player.log'un yanına)
+//   -autoDrive    harvester tarla merkezinin çevresinde daire çizerek, robot zikzak koşarak kendi kendine hareket eder
+//   -ntBuffer N   NetworkTransform yorumlama tamponuna N tick ekler (deneme için)
+//   -ntInterp T   yorumlama türünü zorlar: LegacyLerp, Lerp, SmoothDampening (deneme için)
+//   -autoTrace    her karede (en çok 60 Hz) saat damgalı konumları trace_<host|client>.csv'ye yazar;
+//                 aynı makinedeki iki kopyanın kayıtları karşılaştırılarak senkron hatası ölçülür
+// Konum kaydı, harvester tahmini (RemoteExtrapolator) uygulandıktan sonra alınsın
+[DefaultExecutionOrder(2000)]
 public class AutoTestReporter : MonoBehaviour
 {
     const float Interval = 2f;
@@ -18,6 +25,8 @@ public class AutoTestReporter : MonoBehaviour
     private bool killedThisRound;
     private float killedAt = -1f;
     private int shotsTaken;
+    private System.IO.StreamWriter trace;
+    private double lastTraceMs;
 
     public static void Create()
     {
@@ -28,6 +37,79 @@ public class AutoTestReporter : MonoBehaviour
         int kill = Array.IndexOf(args, "-autoKill");
         if (kill >= 0 && kill + 1 < args.Length && float.TryParse(args[kill + 1], out float seconds)) reporter.killAfter = seconds;
         reporter.screenshots = Array.IndexOf(args, "-autoShot") >= 0;
+        if (Array.IndexOf(args, "-autoDrive") >= 0)
+        {
+            frankMovement.AutoDrive = true;
+            CharMovement.AutoRun = true;
+        }
+        int interp = Array.IndexOf(args, "-ntInterp");
+        if (interp >= 0 && interp + 1 < args.Length && Enum.TryParse(args[interp + 1], true, out Unity.Netcode.Components.NetworkTransform.InterpolationTypes type))
+        {
+            forcedInterpolation = type;
+            Debug.Log("[AutoTest] NetworkTransform yorumlama türü: " + type);
+        }
+        int buffer = Array.IndexOf(args, "-ntBuffer");
+        if (buffer >= 0 && buffer + 1 < args.Length && int.TryParse(args[buffer + 1], out int ticks))
+        {
+            Unity.Netcode.Components.NetworkTransform.InterpolationBufferTickOffset = ticks;
+            Debug.Log("[AutoTest] NetworkTransform tampon payı: " + ticks + " tick");
+        }
+        if (Array.IndexOf(args, "-autoTrace") >= 0)
+        {
+            string role = Array.IndexOf(args, "-autoHost") >= 0 ? "host" : "client";
+            string path = System.IO.Path.Combine(Application.persistentDataPath, $"trace_{role}.csv");
+            reporter.trace = new System.IO.StreamWriter(path, false) { AutoFlush = true };
+            reporter.trace.WriteLine("ms,hx,hz,hyaw,rx,rz,hpitch,hroll");
+            Debug.Log("[AutoTest] Konum kaydı: " + path);
+        }
+    }
+
+    private static Unity.Netcode.Components.NetworkTransform.InterpolationTypes? forcedInterpolation;
+    private float nextInterpolationApply;
+    private bool diagnosed;
+
+    private void LateUpdate()
+    {
+        if (forcedInterpolation.HasValue && Time.time >= nextInterpolationApply)
+        {
+            nextInterpolationApply = Time.time + 1f;
+            foreach (var nt in FindObjectsByType<Unity.Netcode.Components.NetworkTransform>(FindObjectsSortMode.None))
+            {
+                nt.PositionInterpolationType = forcedInterpolation.Value;
+                nt.RotationInterpolationType = forcedInterpolation.Value;
+            }
+        }
+        if (trace == null) return;
+        var gm = GameManager.Instance;
+        if (gm == null || !gm.IsSpawned || gm.Phase != MatchPhase.Playing) return;
+        double ms = (DateTime.UtcNow - DateTime.UnixEpoch).TotalMilliseconds;
+        if (ms - lastTraceMs < 16) return;
+        lastTraceMs = ms;
+
+        var harvester = FindFirstObjectByType<frankMovement>();
+        CharMovement robot = CharMovement.All.Count > 0 ? CharMovement.All[0] : null;
+        if (harvester == null || robot == null) return;
+        if (!diagnosed && Time.time - playingSince > 5f)
+        {
+            diagnosed = true;
+            var rb = harvester.GetComponent<Rigidbody>();
+            var nt = harvester.GetComponent<Unity.Netcode.Components.NetworkTransform>();
+            var nm = NetworkManager.Singleton;
+            Debug.Log($"[AutoTest] Harvester tanı: sahip={harvester.IsOwner} kinematik={rb.isKinematic} rbInterp={rb.interpolation} ntInterp={nt.Interpolate} tür={nt.PositionInterpolationType} unrel={nt.UseUnreliableDeltas} half={nt.UseHalfFloatPrecision} tickLatency={nm.NetworkTimeSystem.TickLatency} rtt={nm.NetworkConfig.NetworkTransport.GetCurrentRtt(NetworkManager.ServerClientId)}ms ping={Harvester.Net.NetStatsHUD.LocalRtt * 1000f:F0}ms fixedDt={Time.fixedDeltaTime} tampon={Unity.Netcode.Components.NetworkTransform.InterpolationBufferTickOffset}");
+        }
+        Vector3 h = harvester.transform.position, r = robot.transform.position;
+        Vector3 e = harvester.transform.eulerAngles;
+        trace.WriteLine(FormattableString.Invariant($"{ms:F1},{h.x:F3},{h.z:F3},{e.y:F2},{r.x:F3},{r.z:F3},{Mathf.DeltaAngle(0f, e.x):F2},{Mathf.DeltaAngle(0f, e.z):F2}"));
+    }
+
+    private void OnDestroy()
+    {
+        if (trace != null) trace.Dispose();
+    }
+
+    private void OnApplicationQuit()
+    {
+        if (trace != null) trace.Flush();
     }
 
     private void Update()

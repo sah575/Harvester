@@ -230,12 +230,23 @@ public class frankMovement : NetworkBehaviour
         }
     }
 
+    /// <summary>Sadece otomatik ağ testi (-autoDrive) için: girdi yerine senaryolu sürüş.</summary>
+    public static bool AutoDrive;
+    float autoDriveStart = -1f;
+
     void GetInput()
     {
         // Geri sayım ve bitiş ekranında sürüş kilitli, etrafa bakmak serbest
         bool canDrive = GameManager.InputAllowed;
         vInput = canDrive ? -Input.GetAxis("Vertical") : 0f;
         hInput = canDrive ? -Input.GetAxis("Horizontal") : 0f;
+        if (AutoDrive && canDrive)
+        {
+            // Ağ testi için otomatik sürüş: 4 sn düz gidip tarlanın ortasına çıkar, sonra tam kırıp daire çizer
+            if (autoDriveStart < 0f) autoDriveStart = Time.time;
+            vInput = -1f;
+            hInput = Time.time - autoDriveStart < 4f ? 0f : 1f;
+        }
         mouseX = Input.GetAxis("Mouse X") * lookSpeed;
         mouseY = Input.GetAxis("Mouse Y") * lookSpeed;
     }

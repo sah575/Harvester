@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Harvester.Net;
 using TMPro;
 using Unity.Collections;
 using Unity.Netcode;
@@ -43,16 +44,33 @@ public class lobby : NetworkBehaviour
     [SerializeField] private Button hostButton, joinButton;
     [SerializeField] private TMP_Text menuStatusText;
 
+    [Header("Online / LAN")]
+    [SerializeField] private Button onlineTabButton, lanTabButton;
+    [SerializeField] private GameObject onlineFields, lanFields;
+    [SerializeField] private TMP_InputField codeInput;
+
     [Header("Oda")]
     [SerializeField] private GameObject roomPanel;
     [SerializeField] private TMP_Text[] slotTexts;
     [SerializeField] private Button harvesterButton, robotButton, startButton, leaveButton;
     [SerializeField] private TMP_Text roomStatusText;
+    [SerializeField] private GameObject roomCodeRow;
+    [SerializeField] private TMP_Text roomCodeText;
+    [SerializeField] private Button copyCodeButton;
 
     [SerializeField] private string gameSceneName = "world";
 
     // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
     public static string PendingStatus;
+
+    // Online: VDS'teki relay üzerinden davet koduyla. LAN: aynı ağda IP ile (UnityTransport).
+    const string OnlinePrefKey = "Harvester.OnlineMode";
+    const string NamePrefKey = "Harvester.PlayerName";
+    private static bool OnlineMode
+    {
+        get => PlayerPrefs.GetInt(OnlinePrefKey, 1) == 1;
+        set => PlayerPrefs.SetInt(OnlinePrefKey, value ? 1 : 0);
+    }
 
     private readonly NetworkList<LobbyPlayer> players = new NetworkList<LobbyPlayer>();
     private readonly Dictionary<ulong, string> pendingNames = new Dictionary<ulong, string>();
@@ -67,6 +85,14 @@ public class lobby : NetworkBehaviour
         robotButton.onClick.AddListener(() => RequestRoleRpc(false));
         startButton.onClick.AddListener(StartGame);
         leaveButton.onClick.AddListener(Leave);
+        onlineTabButton.onClick.AddListener(() => SetMode(true));
+        lanTabButton.onClick.AddListener(() => SetMode(false));
+        copyCodeButton.onClick.AddListener(CopyRoomCode);
+
+        // Kod büyük harfle görünsün; boşluk ve tire kabul edilir, sunucu onları atar.
+        codeInput.onValidateInput = (text, index, c) => char.ToUpperInvariant(c);
+        nameInput.text = PlayerPrefs.GetString(NamePrefKey, "");
+        SetMode(OnlineMode);
 
         // Oyundan dönünce imleç kilitli kalmasın
         Cursor.lockState = CursorLockMode.None;
@@ -80,6 +106,11 @@ public class lobby : NetworkBehaviour
     //   -autoHost [-autoHarvester] [-autoStart N] [-autoRounds R]   oda kur, istenirse Harvester ol,
     //                                                                N oyuncu olunca başlat, R tur oyna
     //   -autoJoin <adres> [-autoHarvester]                           odaya bağlan, istenirse Harvester'ı seç
+    //   -autoOnline                                                  LAN yerine relay kullan. Host davet kodunu
+    //                                                                AutoTestCodePath dosyasına yazar; -autoJoin
+    //                                                                adresi "kod" ise istemci kodu oradan okur,
+    //                                                                değilse verilen değeri kod olarak kullanır
+    //   -relayAddress <ip> -relayPort <port>                         başka bir relay sunucusu (ör. yerel test)
     private static bool autoTestStarted;
     private static int autoStartPlayers, autoRoundsLeft;
 
@@ -101,6 +132,11 @@ public class lobby : NetworkBehaviour
 
         autoTestStarted = true;
         AutoTestReporter.Create();
+        bool online = Array.IndexOf(args, "-autoOnline") >= 0;
+        SetMode(online);
+        int relayAddress = Array.IndexOf(args, "-relayAddress");
+        if (relayAddress >= 0 && relayAddress + 1 < args.Length) Relay.Address = args[relayAddress + 1];
+        Relay.Port = (ushort)IntArg(args, "-relayPort", Relay.Port);
         autoStartPlayers = host ? IntArg(args, "-autoStart", 0) : 0;
         autoRoundsLeft = autoStartPlayers > 0 ? IntArg(args, "-autoRounds", 1) : 0;
         StartCoroutine(AutoTest(host, join >= 0 && join + 1 < args.Length ? args[join + 1] : "127.0.0.1",
@@ -113,12 +149,37 @@ public class lobby : NetworkBehaviour
         return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out int value) ? value : fallback;
     }
 
+    private static string AutoTestCodePath => System.IO.Path.Combine(Application.persistentDataPath, "autotest-code.txt");
+
     private IEnumerator AutoTest(bool host, string address, bool harvester)
     {
         nameInput.text = host ? "TestHost" : "TestClient";
-        addressInput.text = address;
-        if (host) OnHostClicked();
-        else OnJoinClicked();
+        if (OnlineMode && host)
+        {
+            try { System.IO.File.Delete(AutoTestCodePath); } catch (Exception) { }
+            OnHostClicked();
+            while (string.IsNullOrEmpty(Relay.RoomCode)) yield return null;
+            System.IO.File.WriteAllText(AutoTestCodePath, Relay.RoomCode);
+            Debug.Log("[AutoTest] Davet kodu: " + Relay.RoomCode);
+        }
+        else if (OnlineMode)
+        {
+            if (address == "kod")
+            {
+                float giveUp = Time.realtimeSinceStartup + 30f;
+                while (!System.IO.File.Exists(AutoTestCodePath) && Time.realtimeSinceStartup < giveUp) yield return null;
+                address = System.IO.File.Exists(AutoTestCodePath) ? System.IO.File.ReadAllText(AutoTestCodePath).Trim() : "";
+            }
+            Debug.Log("[AutoTest] Kodla katılınıyor: " + address);
+            codeInput.text = address;
+            OnJoinClicked();
+        }
+        else
+        {
+            addressInput.text = address;
+            if (host) OnHostClicked();
+            else OnJoinClicked();
+        }
 
         while (!IsSpawned) yield return null;
         if (harvester) RequestRoleRpc(true);
@@ -142,56 +203,129 @@ public class lobby : NetworkBehaviour
 
     #region Menü
 
+    private static RelayTransport Relay => NetworkManager.Singleton.GetComponent<RelayTransport>();
+
     private void OnHostClicked()
     {
         var nm = NetworkManager.Singleton;
-        hostPassword = passwordInput.text;
+        // Online odada şifre yok: davet kodu zaten şifre işlevi görüyor.
+        hostPassword = OnlineMode ? "" : passwordInput.text;
         gameStarted = false;
         pendingNames.Clear();
         MatchSettings.Players.Clear();
         MatchSettings.RoomPassword = hostPassword;
 
-        // 0.0.0.0'ı dinle ki aynı ağdaki diğer bilgisayarlar da bağlanabilsin
-        nm.GetComponent<UnityTransport>().SetConnectionData("127.0.0.1", Port, "0.0.0.0");
-        nm.NetworkConfig.ConnectionData = BuildPayload();
+        if (OnlineMode)
+        {
+            Relay.MaxPlayers = MaxPlayers;
+            nm.NetworkConfig.NetworkTransport = Relay;
+        }
+        else
+        {
+            var utp = nm.GetComponent<UnityTransport>();
+            // 0.0.0.0'ı dinle ki aynı ağdaki diğer bilgisayarlar da bağlanabilsin
+            utp.SetConnectionData("127.0.0.1", Port, "0.0.0.0");
+            nm.NetworkConfig.NetworkTransport = utp;
+        }
+        nm.NetworkConfig.ConnectionData = BuildPayload(hostPassword);
         SubscribeCallbacks();
         nm.ConnectionApprovalCallback = ApprovalCheck;
 
         if (!nm.StartHost())
         {
             UnsubscribeCallbacks();
-            ShowMenu("Oda kurulamadı. Port " + Port + " kullanımda olabilir.");
+            ShowMenu(OnlineMode ? Relay.LastErrorMessage ?? "Oda kurulamadı." : "Oda kurulamadı. Port " + Port + " kullanımda olabilir.");
             return;
         }
+        SavePlayerName();
         SetMenuInteractable(false);
     }
 
     private void OnJoinClicked()
     {
         var nm = NetworkManager.Singleton;
-        string address = string.IsNullOrWhiteSpace(addressInput.text) ? "127.0.0.1" : addressInput.text.Trim();
 
-        nm.GetComponent<UnityTransport>().SetConnectionData(address, Port);
-        nm.NetworkConfig.ConnectionData = BuildPayload();
+        if (OnlineMode)
+        {
+            Relay.JoinCode = codeInput.text;
+            nm.NetworkConfig.NetworkTransport = Relay;
+            nm.NetworkConfig.ConnectionData = BuildPayload("");
+        }
+        else
+        {
+            string address = string.IsNullOrWhiteSpace(addressInput.text) ? "127.0.0.1" : addressInput.text.Trim();
+            var utp = nm.GetComponent<UnityTransport>();
+            utp.SetConnectionData(address, Port);
+            nm.NetworkConfig.NetworkTransport = utp;
+            nm.NetworkConfig.ConnectionData = BuildPayload(passwordInput.text);
+        }
         SubscribeCallbacks();
 
         if (!nm.StartClient())
         {
             UnsubscribeCallbacks();
-            ShowMenu("Bağlanılamadı.");
+            ShowMenu(OnlineMode ? Relay.LastErrorMessage ?? "Bağlanılamadı." : "Bağlanılamadı.");
             return;
         }
+        SavePlayerName();
         SetMenuInteractable(false);
         menuStatusText.text = "Bağlanıyor...";
     }
 
     // Bağlantı paketi: "şifre\nisim"
-    private byte[] BuildPayload()
+    private byte[] BuildPayload(string password)
     {
         string playerName = nameInput.text.Trim();
         if (string.IsNullOrEmpty(playerName)) playerName = "Oyuncu";
         if (playerName.Length > MaxNameLength) playerName = playerName.Substring(0, MaxNameLength);
-        return System.Text.Encoding.UTF8.GetBytes(passwordInput.text + "\n" + playerName);
+        return System.Text.Encoding.UTF8.GetBytes(password + "\n" + playerName);
+    }
+
+    private void SavePlayerName()
+    {
+        PlayerPrefs.SetString(NamePrefKey, nameInput.text.Trim());
+        PlayerPrefs.Save();
+    }
+
+    private void SetMode(bool online)
+    {
+        // Bağlanırken mod değişmesin
+        var nm = NetworkManager.Singleton;
+        if (nm != null && nm.IsListening) return;
+
+        OnlineMode = online;
+        onlineFields.SetActive(online);
+        lanFields.SetActive(!online);
+        // Seçili sekme basılı (pasif) görünür
+        onlineTabButton.interactable = !online;
+        lanTabButton.interactable = online;
+        hostButton.GetComponentInChildren<TMP_Text>().text = online ? "ODA KUR" : "ODA KUR (LAN)";
+        joinButton.GetComponentInChildren<TMP_Text>().text = online ? "KODLA KATIL" : "ODAYA KATIL (LAN)";
+        if (menuPanel.activeSelf) menuStatusText.text = "";
+    }
+
+    private void CopyRoomCode()
+    {
+        var relay = NetworkManager.Singleton.NetworkConfig.NetworkTransport as RelayTransport;
+        if (relay == null || string.IsNullOrEmpty(relay.RoomCode)) return;
+        GUIUtility.systemCopyBuffer = relay.RoomCode;
+        roomStatusText.text = "Davet kodu kopyalandı: " + relay.RoomCode;
+    }
+
+    /// <summary>
+    /// Bağlantı kopunca oyuncuya gösterilecek sebep: önce host'un yolladığı sebep (ör. "Oda dolu."),
+    /// sonra relay'in sebebi (ör. "Bu kodla bir oda bulunamadı."), yoksa verilen genel mesaj.
+    /// </summary>
+    public static string DescribeDisconnect(string fallback)
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm == null) return fallback;
+        string reason = nm.DisconnectReason;
+        // NGO'nun kendi ürettiği teknik metin "[Disconnect Event]..." ile başlar; onu gösterme.
+        if (!string.IsNullOrEmpty(reason) && !reason.StartsWith("[")) return reason;
+        var relay = nm.NetworkConfig.NetworkTransport as RelayTransport;
+        if (relay != null && !string.IsNullOrEmpty(relay.LastErrorMessage)) return relay.LastErrorMessage;
+        return fallback;
     }
 
     private void Leave()
@@ -214,6 +348,7 @@ public class lobby : NetworkBehaviour
         nameInput.interactable = value;
         passwordInput.interactable = value;
         addressInput.interactable = value;
+        codeInput.interactable = value;
         hostButton.interactable = value;
         joinButton.interactable = value;
     }
@@ -228,6 +363,9 @@ public class lobby : NetworkBehaviour
         var nm = NetworkManager.Singleton;
         nm.OnClientConnectedCallback += OnClientConnected;
         nm.OnClientDisconnectCallback += OnClientDisconnected;
+        nm.OnTransportFailure += OnTransportFailure;
+        var relay = nm.GetComponent<RelayTransport>();
+        if (relay != null) relay.RoomReady += OnRoomReady;
     }
 
     private void UnsubscribeCallbacks()
@@ -236,6 +374,21 @@ public class lobby : NetworkBehaviour
         if (nm == null) return;
         nm.OnClientConnectedCallback -= OnClientConnected;
         nm.OnClientDisconnectCallback -= OnClientDisconnected;
+        nm.OnTransportFailure -= OnTransportFailure;
+        var relay = nm.GetComponent<RelayTransport>();
+        if (relay != null) relay.RoomReady -= OnRoomReady;
+    }
+
+    private void OnRoomReady(string code)
+    {
+        RefreshRoom();
+    }
+
+    // Host'un relay bağlantısı koptu (ya da hiç kurulamadı): NGO kendini kapatıyor, menüye dön.
+    private void OnTransportFailure()
+    {
+        UnsubscribeCallbacks();
+        ShowMenu(DescribeDisconnect("Sunucuyla bağlantı koptu."));
     }
 
     public override void OnNetworkSpawn()
@@ -287,9 +440,8 @@ public class lobby : NetworkBehaviour
         }
 
         // Biz düştük (reddedildik ya da host kapattı)
-        string reason = string.IsNullOrEmpty(nm.DisconnectReason) ? "Bağlantı koptu." : nm.DisconnectReason;
         UnsubscribeCallbacks();
-        ShowMenu(reason);
+        ShowMenu(DescribeDisconnect("Bağlantı koptu."));
     }
 
     private void ApprovalCheck(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
@@ -439,6 +591,15 @@ public class lobby : NetworkBehaviour
 
         harvesterButton.interactable = !localIsHarvester && harvesterIndex < 0;
         robotButton.interactable = localIsHarvester;
+
+        var relay = NetworkManager.NetworkConfig.NetworkTransport as RelayTransport;
+        roomCodeRow.SetActive(relay != null);
+        if (relay != null)
+        {
+            bool hasCode = !string.IsNullOrEmpty(relay.RoomCode);
+            roomCodeText.text = hasCode ? "Davet kodu: <b><color=#E8C547>" + relay.RoomCode + "</color></b>" : "Davet kodu alınıyor...";
+            copyCodeButton.interactable = hasCode;
+        }
 
         startButton.gameObject.SetActive(IsServer);
         bool canStart = CanStart(out string reason);

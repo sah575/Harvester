@@ -1,6 +1,6 @@
 # Oyun tasarımı notları
 
-İlk yazım: 27 Ekim 2026. Durum: **tartışma aşamasında**. Aşağıdaki kararlar verilmeden 1. faza başlanmayacak.
+İlk yazım: 27 Ekim 2026. Kararlar 28 Ekim 2026'da verildi (aşağıda). Sıradaki iş: 1. faz.
 
 ## Şu anki oyunun sorunu
 
@@ -64,12 +64,12 @@ Oyunda neredeyse hiç ses yok. Gizlilik oyununda ses mekaniğin ta kendisi:
 | 4. His ve görsellik | Parçacıklar, ışık huzmesi, ses cilası, harita yapıları | Oyun eğlenceli hale gelince cilalanmaya değer |
 | 5. Altyapı | Ayarlar menüsü, yapay zekâ robot botları | Botlar tek başına test ve 2 kişilik oyunları doldurmak için çok değerli |
 
-## Verilmesi gereken kararlar
+## Kararlar (28 Ekim 2026)
 
-- [ ] **Robotların kazanma şekli:** görevli kaçış mı, yoksa saklanma + görev karışımı mı (ör. süre dolarsa da kazanırlar ama görevler süreyi kısaltır)?
-- [ ] **Ölüm:** kalıcı mı, yoksa çekirdekten kurtarma olsun mu?
-- [ ] **Hedef oyuncu sayısı:** hep 1'e 3 mü, yoksa 1'e 2 de dengeli olmalı mı? Görev sayısı buna göre ölçeklenir.
-- [ ] **Tur süresi:** 5 dakika görevli bir oyun için kısa olabilir; 7–8 dakika daha uygun olabilir.
+- [x] **Robotların kazanma şekli:** görevli kaçış. Vericiler onarılınca kaçış noktası açılır; süre dolarsa Harvester kazanır.
+- [x] **Ölüm:** çekirdekten kurtarma. Ölen robotun kafası yerde kalır, takım arkadaşı onu bir vericiye taşırsa robot yeniden kurulur.
+- [x] **Oyuncu sayısı:** 2–4 oyuncu; verici sayısı ve gereken onarım robot sayısına göre ölçeklenir.
+- [x] **Tur süresi:** 5 dakika kalıyor. Görevlerin süresi buna göre kısa tutulmalı.
 
 ## Bugünkü durum (referans)
 
