@@ -162,6 +162,9 @@ public class CharMovement : NetworkBehaviour
         return any;
     }
 
+    /// <summary>Sadece otomatik ağ testi (-autoDrive) için: girdi yerine senaryolu koşu.</summary>
+    public static bool AutoRun;
+
     private void Update()
     {
         if (!IsOwner || IsDead) return;
@@ -172,6 +175,13 @@ public class CharMovement : NetworkBehaviour
         inputZ = canMove ? Input.GetAxis("Vertical") : 0f;
         isRunning = Input.GetKey(KeyCode.LeftShift);
         if (canMove && Input.GetKeyDown(KeyCode.Space) && Stamina >= jumpCost) jumpRequested = true;
+        if (AutoRun && canMove)
+        {
+            // Ağ testi için otomatik koşu: zikzak, 3 sn depar 3 sn yürüyüş
+            inputZ = 1f;
+            inputX = Mathf.Sin(Time.time * 0.8f);
+            isRunning = Time.time % 6f < 3f;
+        }
 
         animator.SetFloat("run", Mathf.Abs(inputZ));
         Look();
