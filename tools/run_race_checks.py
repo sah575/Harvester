@@ -16,6 +16,8 @@ out=root/'Builds'/'reports'/a.label;out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy()
 for key in ['__NV_PRIME_RENDER_OFFLOAD','__GLX_VENDOR_LIBRARY_NAME','__VK_LAYER_NV_optimus']:env.pop(key,None)
 if a.gpu=='nvidia':env.update(__NV_PRIME_RENDER_OFFLOAD='1',__GLX_VENDOR_LIBRARY_NAME='nvidia',__VK_LAYER_NV_optimus='NVIDIA_only')
+if a.mode=='perf':
+    prefs=root/'Builds'/'perf-prefs'/a.label;prefs.mkdir(parents=True,exist_ok=True);env['XDG_CONFIG_HOME']=str(prefs)
 exe=root/'Builds/LinuxTest/Harvester.x86_64'
 common=[str(exe),'-screen-fullscreen','0','-screen-width','1920' if a.mode=='perf' else '1280','-screen-height','1080' if a.mode=='perf' else '720']
 if a.api!='auto':common+=['-force-'+a.api]
@@ -50,8 +52,8 @@ try:
         result['network_mismatch']='NetworkConfig mismatch' in h+c or 'PrefabHash' in h+c
         result['passed']=result['passed'] and not result['network_mismatch']
     else:
-        host,hlog=launch('host',['-autoHost','-autoStart','1','-autoBots','3','-autoDrive','-autoLaps','999','-perfProbe',str(a.seconds),'-perfLabel',a.label])
-        deadline=time.monotonic()+a.seconds+90
+        host,hlog=launch('host',['-autoHost','-autoStart','1','-autoRounds','100','-autoBots','3','-autoDrive','-autoLaps','999','-perfProbe',str(a.seconds),'-perfLabel',a.label,'-perfOutput',str(out)])
+        deadline=time.monotonic()+a.seconds*15+120
         while time.monotonic()<deadline:
             text=read(hlog)
             if '[Perf] TAMAMLANDI' in text:break
@@ -59,6 +61,14 @@ try:
             time.sleep(1)
         result['passed']='[Perf] TAMAMLANDI' in text
         result['summary']=[line for line in text.splitlines() if line.startswith('[Perf]')]
+        summary_path=out/(a.label+'.json')
+        if summary_path.exists():
+            summary=json.loads(summary_path.read_text())
+            result['actual_gpu']=summary['gpu'];result['actual_api']=summary['api']
+            result['actual_resolution']=[summary['width'],summary['height']]
+            gpu_ok=('NVIDIA' in summary['gpu']) if a.gpu=='nvidia' else ('Intel' in summary['gpu'])
+            result['passed']=result['passed'] and gpu_ok and summary['width']==1920 and summary['height']==1080
+
     for path in out.glob('*.log'):
         text=read(path)
         for line in text.splitlines():
