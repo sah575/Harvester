@@ -183,7 +183,7 @@ namespace Harvester.Race
         {
             // Geri sayımda (ya da yarış dışı) girdi kilitli: araba gitmez ama bu "takılmak" değil.
             // Sayaçlar işlerse yarış başlar başlamaz geri vitese takar ya da arabayı ışınlar.
-            if (!RaceCar.InputEnabled || !GameManager.InputAllowed)
+            if (!RaceCar.InputEnabled)
             {
                 flippedTimer = offTrackTimer = stuckTimer = 0f;
                 reverseUntil = 0f;

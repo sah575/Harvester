@@ -112,9 +112,6 @@ public static class LobbyUIBuilder
             slots[i] = text;
         }
         CreateSpacer(room, 12);
-        var roleRow = CreateRow(room, 64);
-        var harvesterButton = CreateButton(roleRow, resources, "HARVESTER OL", AccentColor);
-        var robotButton = CreateButton(roleRow, resources, "ROBOT OL", ButtonColor);
         var startButton = CreateButton(room, resources, "OYUNU BAŞLAT", new Color(0.2f, 0.45f, 0.25f));
         var leaveButton = CreateButton(room, resources, "AYRIL", ButtonColor);
         var roomStatus = CreateText("Status", room, "", 22, FontStyles.Normal, MutedTextColor, 40);
@@ -133,8 +130,6 @@ public static class LobbyUIBuilder
         var slotsProp = so.FindProperty("slotTexts");
         slotsProp.arraySize = slots.Length;
         for (int i = 0; i < slots.Length; i++) slotsProp.GetArrayElementAtIndex(i).objectReferenceValue = slots[i];
-        so.FindProperty("harvesterButton").objectReferenceValue = harvesterButton;
-        so.FindProperty("robotButton").objectReferenceValue = robotButton;
         so.FindProperty("startButton").objectReferenceValue = startButton;
         so.FindProperty("leaveButton").objectReferenceValue = leaveButton;
         so.FindProperty("roomStatusText").objectReferenceValue = roomStatus;

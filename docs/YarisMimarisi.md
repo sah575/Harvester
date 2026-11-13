@@ -9,7 +9,7 @@
 - Harvester'ı kimse sürmüyor, host'ta çalışan yapay zekâ sürüyor. İleride silahlar gelecek (roket, yağ, makineli). Şimdilik takip, biçme ve çarpma.
 - Sürüş arcade: hızlı kalkış, kolay dönüş, drift.
 - Araba modeli Kenney Car Kit'ten (CC0); bütün kod bizim.
-- Eski saklambaç oyunu (`world` sahnesi, robotlar) şimdilik duruyor, dokunulmaz. Yarış yeni `race` sahnesinde kurulur.
+- Eski saklambaç oyunu (`world` sahnesi, robotlar, mısır biçme) 13 Kasım'da projeden silindi; git geçmişinde duruyor. Tek mod yarış: lobi her zaman `race` sahnesini yükler. Lethal Company görünümü (LethalLook, gece, sis) korunuyor.
 
 ### Harvester kararları (13 Kasım)
 
@@ -23,9 +23,9 @@
 |---|---|---|
 | **Pist** | `Assets/scripts/Race/Track/`, `Assets/scripts/Editor/TrackBuilder.cs`, `Assets/Scenes/race.unity` | `Harvester/Rebuild Race Track` menüsü: virajlı, hafif eğimli pist ağı, bariyerler, zemin, başlangıç/bitiş işaretleri. `RaceTrack` bileşenini doldurur. |
 | **Araba** | `Assets/Models/Kenney/` (sadece modeller ve lisans), `Assets/scripts/Race/Car/`, `Assets/scripts/Editor/CarBuilder.cs`, `Assets/Prefabs/race/` | `RaceCar` (arcade sürüş, tek oyunculu test edilebilir), araba kamerası, `Harvester/Rebuild Race Car` menüsü. |
-| **Harvester AI** | `Assets/scripts/Race/Harvester/`, `Assets/scripts/Editor/HarvesterAIBuilder.cs` | `HarvesterAI`: pisti takip eden, en yakın/en arkadaki arabaya saldıran, tablasıyla biçen sunucu taraflı sürücü. |
+| **Harvester AI** | `Assets/scripts/Race/Harvester/`, `Assets/scripts/Editor/HarvesterAIBuilder.cs`, görsel kaynağı `Assets/Models/Harvester/` (`HarvesterGorsel.prefab`, `harvesterv4.1.fbx`, malzemeler) | `HarvesterAI`: pisti takip eden, en yakın/en arkadaki arabaya saldıran, tablasıyla biçen sunucu taraflı sürücü. |
 | **Ağ** | `Assets/scripts/Race/Net/`, `Assets/scripts/Race/RaceManager.cs` (ve spawner) | Yarış akışı (geri sayım, sıralama, eleme, bitiş), araba–araba ve harvester–araba çarpışma senkronu, lobiden `race` sahnesine geçiş. |
-| **Yönetici** | `Assets/scripts/Race/RaceTrack.cs` (ortak sözleşme), `lobby.cs` / `GameManager.cs` entegrasyonu, bu belge | Parçaların birleşmesi, build testleri. |
+| **Yönetici** | `Assets/scripts/Race/RaceTrack.cs` (ortak sözleşme), `lobby.cs` entegrasyonu, bu belge | Parçaların birleşmesi, build testleri. |
 
 ## Ortak sözleşmeler
 
@@ -46,7 +46,7 @@ public class RaceCar : NetworkBehaviour
     public void ApplyHit(Vector3 velocityChange, Vector3 worldPoint); // her yerden çağrılabilir; sahibine iletilir
 }
 ```
-- Hareket sahibinde (owner-authoritative): `NetworkTransform` + `NetworkRigidbody`, robotlardaki ayarlarla (güvenilmez half-float delta), ama tam dönüş.
+- Hareket sahibinde (owner-authoritative): `NetworkTransform` + `NetworkRigidbody`, güvenilmez half-float delta ile, ama tam dönüş.
 - Uzaktaki arabalar `RemoteExtrapolator` ile gösterilir. Bu bileşen zaten genel; harvester için yazıldı, arabalarda da çalışır.
 - `ApplyHit`'in sahibine ulaşması Ağ ajanının işi. Araba ajanı sadece yerel uygulamayı yapar (`Body.AddForce(velocityChange, ForceMode.VelocityChange)` gibi) ve bir RPC kancası bırakır.
 
@@ -62,8 +62,8 @@ Tek bir Unity editörü var, ajanlar aynı anda çalışıyor:
 
 1. **Sahne açma/kaydetme, play mode ve build** sadece o an editör sırası kendisinde olan ajanın işidir. Sırayı yönetici verir; ajana verilen görevde yazar.
 2. **Kod derleme herkese ortak.** `refresh_unity` herkesin kodunu derler. Kendi klasörün dışındaki derleme hatalarını düzeltme, raporla. Kendi kodunu her zaman derlenir halde bırak (yarım dosya bırakma).
-3. Eski sahnelere (`world`, `Lobby`, `mpdeneme`, `deneme`, `testFrank`) ve eski karakter prefab'larına dokunma. `Lobby` entegrasyonu yöneticinin işi.
-4. Network prefab'ı değiştirdikten sonra `GlobalObjectIdHash`'in diskte ve editörde aynı olduğunu kontrol et. Prefab'ı `EditPrefabContentsScope` ile düzenlediysen `AssetDatabase.ForceReserializeAssets` çalıştır (`NetSyncBuilder`'daki gibi).
+3. `Lobby` sahnesi ve entegrasyonu yöneticinin işi. Lobi arayüzü `Harvester/Rebuild Lobby UI` ile koddan kurulur (`LobbyUIBuilder` + `LobbyMenuBuilder`).
+4. Network prefab'ı değiştirdikten sonra `GlobalObjectIdHash`'in diskte ve editörde aynı olduğunu kontrol et. Prefab'ı `EditPrefabContentsScope` ile düzenlediysen `AssetDatabase.ForceReserializeAssets` çalıştır (`HarvesterAIBuilder`'daki gibi).
 5. Commit atma. Git'e yönetici kullanıcı isteyince atar.
 
 ## Kurallar

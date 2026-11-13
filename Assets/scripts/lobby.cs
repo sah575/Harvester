@@ -15,18 +15,16 @@ public struct LobbyPlayer : INetworkSerializable, IEquatable<LobbyPlayer>
 {
     public ulong ClientId;
     public FixedString32Bytes Name;
-    public bool IsHarvester;
 
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
     {
         serializer.SerializeValue(ref ClientId);
         serializer.SerializeValue(ref Name);
-        serializer.SerializeValue(ref IsHarvester);
     }
 
     public bool Equals(LobbyPlayer other)
     {
-        return ClientId == other.ClientId && Name.Equals(other.Name) && IsHarvester == other.IsHarvester;
+        return ClientId == other.ClientId && Name.Equals(other.Name);
     }
 }
 
@@ -52,15 +50,13 @@ public class lobby : NetworkBehaviour
     [Header("Oda")]
     [SerializeField] private GameObject roomPanel;
     [SerializeField] private TMP_Text[] slotTexts;
-    [SerializeField] private Button harvesterButton, robotButton, startButton, leaveButton;
+    [SerializeField] private Button startButton, leaveButton;
     [SerializeField] private TMP_Text roomStatusText;
     [SerializeField] private GameObject roomCodeRow;
     [SerializeField] private TMP_Text roomCodeText;
     [SerializeField] private Button copyCodeButton;
 
-    [SerializeField] private string gameSceneName = "world";
-    [Tooltip("Yarış modu: herkes yarışçı, harvester'ı yapay zekâ sürer, 'race' sahnesi yüklenir. Kapalıysa eski saklambaç ('world').")]
-    [SerializeField] private bool raceMode = true;
+    // Herkes yarışçı, harvester'ı sunucudaki yapay zekâ sürer
     const string RaceSceneName = "race";
 
     // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
@@ -84,8 +80,6 @@ public class lobby : NetworkBehaviour
     {
         hostButton.onClick.AddListener(OnHostClicked);
         joinButton.onClick.AddListener(OnJoinClicked);
-        harvesterButton.onClick.AddListener(() => RequestRoleRpc(true));
-        robotButton.onClick.AddListener(() => RequestRoleRpc(false));
         startButton.onClick.AddListener(StartGame);
         leaveButton.onClick.AddListener(Leave);
         onlineTabButton.onClick.AddListener(() => SetMode(true));
@@ -106,9 +100,8 @@ public class lobby : NetworkBehaviour
     }
 
     // Development build'de komut satırından otomatik test (editörde çalışmaz):
-    //   -autoHost [-autoHarvester] [-autoStart N] [-autoRounds R]   oda kur, istenirse Harvester ol,
-    //                                                                N oyuncu olunca başlat, R tur oyna
-    //   -autoJoin <adres> [-autoHarvester]                           odaya bağlan, istenirse Harvester'ı seç
+    //   -autoHost [-autoStart N] [-autoRounds R]                     oda kur, N oyuncu olunca başlat, R tur oyna
+    //   -autoJoin <adres>                                            odaya bağlan
     //   -autoOnline                                                  LAN yerine relay kullan. Host davet kodunu
     //                                                                AutoTestCodePath dosyasına yazar; -autoJoin
     //                                                                adresi "kod" ise istemci kodu oradan okur,
@@ -134,7 +127,7 @@ public class lobby : NetworkBehaviour
         if (!host && join < 0) return;
 
         autoTestStarted = true;
-        AutoTestReporter.Create();
+        // Yarıştaki test bayraklarını (-autoDrive, -autoTrace, -ntBuffer...) RaceAutoTest okur
         bool online = Array.IndexOf(args, "-autoOnline") >= 0;
         SetMode(online);
         int relayAddress = Array.IndexOf(args, "-relayAddress");
@@ -142,8 +135,7 @@ public class lobby : NetworkBehaviour
         Relay.Port = (ushort)IntArg(args, "-relayPort", Relay.Port);
         autoStartPlayers = host ? IntArg(args, "-autoStart", 0) : 0;
         autoRoundsLeft = autoStartPlayers > 0 ? IntArg(args, "-autoRounds", 1) : 0;
-        StartCoroutine(AutoTest(host, join >= 0 && join + 1 < args.Length ? args[join + 1] : "127.0.0.1",
-            Array.IndexOf(args, "-autoHarvester") >= 0));
+        StartCoroutine(AutoTest(host, join >= 0 && join + 1 < args.Length ? args[join + 1] : "127.0.0.1"));
     }
 
     private static int IntArg(string[] args, string name, int fallback)
@@ -154,7 +146,7 @@ public class lobby : NetworkBehaviour
 
     private static string AutoTestCodePath => System.IO.Path.Combine(Application.persistentDataPath, "autotest-code.txt");
 
-    private IEnumerator AutoTest(bool host, string address, bool harvester)
+    private IEnumerator AutoTest(bool host, string address)
     {
         nameInput.text = host ? "TestHost" : "TestClient";
         if (OnlineMode && host)
@@ -185,7 +177,6 @@ public class lobby : NetworkBehaviour
         }
 
         while (!IsSpawned) yield return null;
-        if (harvester) RequestRoleRpc(true);
         if (autoRoundsLeft > 0) yield return AutoStartWhenReady();
     }
 
@@ -417,6 +408,7 @@ public class lobby : NetworkBehaviour
         var menus = GetComponent<Harvester.UI.LobbyMenus>();
         if (menus != null) menus.ShowRoom();
         RefreshRoom();
+        if (Debug.isDebugBuild) Debug.Log("[Lobby] Oda açıldı: kurucu=" + IsServer + " bağlı=" + NetworkManager.ConnectedClientsIds.Count);
     }
 
     public override void OnNetworkDespawn()
@@ -459,7 +451,7 @@ public class lobby : NetworkBehaviour
         string playerName = split >= 0 ? payload.Substring(split + 1) : "Oyuncu";
         if (playerName.Length > MaxNameLength) playerName = playerName.Substring(0, MaxNameLength);
 
-        response.CreatePlayerObject = false; // Karakterleri world sahnesinde SpamChars oluşturuyor
+        response.CreatePlayerObject = false; // Arabaları race sahnesinde RaceSpawner oluşturuyor
 
         if (gameStarted)
         {
@@ -487,7 +479,7 @@ public class lobby : NetworkBehaviour
     {
         if (IndexOf(clientId) >= 0) return;
 
-        // Önceki turdan dönen oyuncu ismini ve rolünü korur
+        // Önceki turdan dönen oyuncunun ismi korunur
         MatchSettings.Players.TryGetValue(clientId, out var previous);
         if (!pendingNames.TryGetValue(clientId, out string playerName)) playerName = previous.Name;
 
@@ -495,29 +487,12 @@ public class lobby : NetworkBehaviour
         {
             ClientId = clientId,
             Name = new FixedString32Bytes(string.IsNullOrEmpty(playerName) ? "Oyuncu" : playerName),
-            IsHarvester = previous.IsHarvester && HarvesterIndex() < 0,
         });
     }
 
     #endregion
 
-    #region Roller ve başlatma
-
-    [Rpc(SendTo.Server)]
-    private void RequestRoleRpc(bool harvester, RpcParams rpcParams = default)
-    {
-        ulong sender = rpcParams.Receive.SenderClientId;
-        int index = IndexOf(sender);
-        if (index < 0) return;
-
-        // Harvester'ı sadece 1 kişi seçebilir
-        if (harvester && HarvesterIndex() >= 0 && HarvesterIndex() != index) return;
-
-        var player = players[index];
-        if (player.IsHarvester == harvester) return;
-        player.IsHarvester = harvester;
-        players[index] = player;
-    }
+    #region Başlatma
 
     private void StartGame()
     {
@@ -526,11 +501,11 @@ public class lobby : NetworkBehaviour
         MatchSettings.Players.Clear();
         foreach (var p in players)
         {
-            MatchSettings.Players[p.ClientId] = new MatchSettings.PlayerInfo { Name = p.Name.ToString(), IsHarvester = p.IsHarvester };
+            MatchSettings.Players[p.ClientId] = new MatchSettings.PlayerInfo { Name = p.Name.ToString() };
         }
 
         gameStarted = true;
-        NetworkManager.SceneManager.LoadScene(raceMode ? RaceSceneName : gameSceneName, LoadSceneMode.Single);
+        NetworkManager.SceneManager.LoadScene(RaceSceneName, LoadSceneMode.Single);
     }
 
     private bool CanStart(out string reason)
@@ -538,13 +513,6 @@ public class lobby : NetworkBehaviour
         if (players.Count < MinPlayers)
         {
             reason = "Başlamak için en az " + MinPlayers + " oyuncu gerekli.";
-            return false;
-        }
-        // Tek kişilik debug turunda rol serbest: robot seçen Harvester'sız dolaşır.
-        // Yarış modunda rol yok: harvester'ı yapay zekâ sürüyor.
-        if (!raceMode && HarvesterIndex() < 0 && players.Count > 1)
-        {
-            reason = "Bir oyuncu Harvester'ı seçmeli.";
             return false;
         }
         reason = "";
@@ -560,15 +528,6 @@ public class lobby : NetworkBehaviour
         return -1;
     }
 
-    private int HarvesterIndex()
-    {
-        for (int i = 0; i < players.Count; i++)
-        {
-            if (players[i].IsHarvester) return i;
-        }
-        return -1;
-    }
-
     #endregion
 
     private void RefreshRoom()
@@ -576,8 +535,6 @@ public class lobby : NetworkBehaviour
         if (!IsSpawned) return;
 
         ulong localId = NetworkManager.LocalClientId;
-        int harvesterIndex = HarvesterIndex();
-        bool localIsHarvester = false;
 
         for (int i = 0; i < slotTexts.Length; i++)
         {
@@ -589,19 +546,11 @@ public class lobby : NetworkBehaviour
 
             var p = players[i];
             bool isLocal = p.ClientId == localId;
-            if (isLocal) localIsHarvester = p.IsHarvester;
-
-            string role = raceMode ? "<color=#8FB3D9>Yarışçı</color>"
-                        : p.IsHarvester ? "<color=#E03A2F>HARVESTER</color>" : "<color=#8FB3D9>Robot</color>";
+            const string role = "<color=#8FB3D9>Yarışçı</color>";
             string tags = (p.ClientId == NetworkManager.ServerClientId ? "  <color=#C9A227>[kurucu]</color>" : "")
                         + (isLocal ? "  <color=#AAA>(sen)</color>" : "");
             slotTexts[i].text = p.Name + tags + "<pos=70%>" + role;
         }
-
-        harvesterButton.interactable = !localIsHarvester && harvesterIndex < 0;
-        robotButton.interactable = localIsHarvester;
-        // Yarışta rol seçimi yok: Harvester/Robot düğmelerinin satırı gizlenir
-        harvesterButton.transform.parent.gameObject.SetActive(!raceMode);
 
         var relay = NetworkManager.NetworkConfig.NetworkTransport as RelayTransport;
         roomCodeRow.SetActive(relay != null);

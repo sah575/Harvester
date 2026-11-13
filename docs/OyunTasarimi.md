@@ -1,5 +1,7 @@
 # Oyun tasarımı notları
 
+> **Eski tasarım.** Bu belge saklambaç oyununu (mısır tarlasında robotlar ve oyuncunun sürdüğü harvester) anlatır. Oyun 12 Kasım 2026'da online arcade yarışa döndü; saklambacın sahneleri, robotları ve kodu 13 Kasım 2026'da projeden silindi (git geçmişinde duruyor). Güncel tasarım ve mimari için `docs/YarisMimarisi.md`'ye bak.
+
 İlk yazım: 27 Ekim 2026. Kararlar 28 Ekim 2026'da verildi (aşağıda). Sıradaki iş: 1. faz.
 
 ## Şu anki oyunun sorunu

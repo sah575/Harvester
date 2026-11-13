@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 namespace Harvester.Race
@@ -27,6 +28,8 @@ namespace Harvester.Race
     ///   -autoLaps N          (sunucu) tur sayısını değiştirir
     ///   -autoTrace           her karede (en çok 60 Hz) bütün arabaların konumunu trace_race_host|client.csv'ye yazar
     ///   -autoShot            ekran görüntüleri: HUD (yarışın 4. sn'si), ilk çarpışma, kaput kamerası, izleyici kamerası
+    ///   -ntBuffer N          NetworkTransform yorumlama tamponuna N tick ekler (deneme için)
+    ///   -ntInterp T          yorumlama türünü zorlar: LegacyLerp, Lerp, SmoothDampening (deneme için)
     /// Her 2 sn'de "[AutoTest] yarış ..." satırı: faz, sıralama, konumlar, vuruş sayısı.
     /// Çarpışmalar ayrıca CarContactSolver'da "[CarHit]" önekiyle loglanır.
     /// </summary>
@@ -65,6 +68,8 @@ namespace Harvester.Race
         private float harvesterHold = -1f;
         private float laneOverride = float.NaN;
         private bool shots;
+        private NetworkTransform.InterpolationTypes? forcedInterpolation;
+        private float nextInterpolationApply;
         private string role = "yerel";
         private StreamWriter trace;
         private double lastTraceMs;
@@ -135,6 +140,17 @@ namespace Harvester.Race
                 trace.WriteLine("ms,st,car,local,x,y,z,yaw,vx,vz,elim");
                 Debug.Log("[AutoTest] Yarış konum kaydı: " + path);
             }
+            NetworkTransform.InterpolationTypes interp;
+            if (Enum.TryParse(Arg(args, "-ntInterp"), true, out interp))
+            {
+                forcedInterpolation = interp;
+                Debug.Log("[AutoTest] NetworkTransform yorumlama türü: " + interp);
+            }
+            if (int.TryParse(Arg(args, "-ntBuffer"), out n))
+            {
+                NetworkTransform.InterpolationBufferTickOffset = n;
+                Debug.Log("[AutoTest] NetworkTransform tampon payı: " + n + " tick");
+            }
             Debug.Log("[AutoTest] Yarış testi: sürüş=" + drive + " hızÇarpanı=" + speedScale + " çarpma=" + ram + " geçiş=" + ramSwitch + " eleme=" + elimAfter + " tur=" + lapsOverride + " harvesterBekle=" + harvesterHold);
         }
 
@@ -145,6 +161,17 @@ namespace Harvester.Race
 
         private void Update()
         {
+            // Zorlanan yorumlama türü sonradan doğan objelere de uygulansın diye saniyede bir
+            if (forcedInterpolation.HasValue && Time.time >= nextInterpolationApply)
+            {
+                nextInterpolationApply = Time.time + 1f;
+                foreach (var nt in FindObjectsByType<NetworkTransform>(FindObjectsSortMode.None))
+                {
+                    nt.PositionInterpolationType = forcedInterpolation.Value;
+                    nt.RotationInterpolationType = forcedInterpolation.Value;
+                }
+            }
+
             var manager = RaceManager.Instance;
             if (lapsOverride > 0 && manager != null) manager.OverrideLaps(lapsOverride);
             if (harvesterHold > 0f && manager != null && manager.IsAuthority && manager.Phase == RacePhase.Racing)

@@ -1,0 +1,12 @@
+{
+  "label": "temizlik-online",
+  "gpu_requested": "intel",
+  "api_requested": "auto",
+  "mode": "online",
+  "host_race_started": true,
+  "host_finished": true,
+  "host_returned": true,
+  "client_returned": true,
+  "passed": true,
+  "network_mismatch": false
+}

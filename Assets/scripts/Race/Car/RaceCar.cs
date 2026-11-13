@@ -236,7 +236,7 @@ namespace Harvester.Race
         /// <summary>Sürücü göz hizası (kokpit kamerası). Modelde yoksa null.</summary>
         public Transform CockpitAnchor => visual != null ? visual.CockpitAnchor : null;
 
-        /// <summary>Bu arabanın girdisini klavye yerine verir (bot ya da test sürücüsü). InputEnabled ve InputAllowed yine geçerli.</summary>
+        /// <summary>Bu arabanın girdisini klavye yerine verir (bot ya da test sürücüsü). InputEnabled yine geçerli.</summary>
         public void SetExternalInput(float throttle, float steer, bool handbrake)
         {
             externalInput = true;
@@ -348,7 +348,7 @@ namespace Harvester.Race
                 return;
             }
 
-            bool allowed = InputEnabled && GameManager.InputAllowed;
+            bool allowed = InputEnabled;
             throttleInput = allowed ? Input.GetAxis("Vertical") : 0f;
             steerInput = allowed ? Input.GetAxis("Horizontal") : 0f;
             handbrakeInput = allowed && Input.GetKey(KeyCode.Space);

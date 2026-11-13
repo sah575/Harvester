@@ -11,11 +11,11 @@ using UnityEngine.SceneManagement;
 
 // Yapay zekânın sürdüğü yarış harvester'ının prefab'ını koddan kurar ve testini sahneye koyar.
 // Menü: Harvester > Rebuild Harvester AI, Harvester > Harvester Test > ...
-// Görsel FRANKV2'den kopyalanır (FRANKV2'ye dokunulmaz, sadece okunur). Model -Z'ye bakıyor; "Model" çocuğu
+// Görsel Assets/Models/Harvester/HarvesterGorsel.prefab'tan kopyalanır (eski FRANKV2'nin yalnız görsel kopyası, sadece okunur). Model -Z'ye bakıyor; "Model" çocuğu
 // 180° döndürülür, böylece kök +Z'ye bakar.
 public static class HarvesterAIBuilder
 {
-    const string SourcePath = "Assets/Prefabs/modifiyeli/FRANKV2.prefab";
+    const string SourcePath = "Assets/Models/Harvester/HarvesterGorsel.prefab";
     const string Folder = "Assets/Prefabs/race";
     const string PrefabPath = Folder + "/HarvesterAI.prefab";
     const string DifficultyFolder = "Assets/scripts/Race/Harvester/Data";
