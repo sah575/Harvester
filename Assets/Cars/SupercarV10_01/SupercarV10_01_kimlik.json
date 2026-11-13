@@ -1,0 +1,31 @@
+{
+  "id": "SupercarV10_01",
+  "ad_tr": "V10 Orta Motor Süper Spor",
+  "sinif": "supercar",
+  "ilham": "Orta motorlu V10 pist/yol süper spor kupalar (özgün tasarım)",
+  "boyut_m": {
+    "boy": 4.554,
+    "en": 2.000,
+    "yukseklik": 1.210,
+    "dingil": 2.660
+  },
+  "tekerlek": {
+    "on_yaricap": 0.340,
+    "on_genislik": 0.280,
+    "arka_yaricap": 0.360,
+    "arka_genislik": 0.320
+  },
+  "ozellikler": [
+    "Öne alınmış alçak kanopi (cab-forward) ve uzun eğimli arka motor güvertesi",
+    "Kapı arkasında dikey kontrast karbon yan hava kanadı (sideblade)",
+    "Geniş altıgen ön ızgara çerçevesi ve L-bıçak imzalı LED farlar",
+    "Panjurlu orta-arka motor kapağı altında çift sıra V10 emme manifoldu",
+    "Tam kapsamlı 17 modifiye slotu, 4 jant stili ve 5 çıkartma katmanı"
+  ],
+  "varsayilan_renkler": {
+    "Paint_Body": "#D6DAE0",
+    "Paint_Accent": "#E6241A",
+    "Paint_Caliper": "#E6241A",
+    "Paint_Rim": "#2E3136"
+  }
+}

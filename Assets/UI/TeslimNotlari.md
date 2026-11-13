@@ -44,11 +44,11 @@ Unity tarafından üretilen eşlik eden `.meta` dosyaları da teslimin parçası
 
 ## Mevcut veri/API ihtiyaçları
 
-- **CarCatalog asset'i yok.** Garaj, tanımları UI envanterinden listeler ve bunu ekranda belirtir. Şu anda bir CarDefinition var: RacerCoupe_01. Araç kurucusu çalıştırılmadı. Yarış tarafındaki kataloğun hazırlanıp bağlanması ve UI ile aynı sıralamayı kullanması gerekir; yarışta kayıtlı seçim uygulaması bu eksik katalog nedeniyle uçtan uca sınanmadı.
+- **CarCatalog asset'i yok.** Garaj, tanımları UI envanterinden listeler ve bunu ekranda belirtir. Şu anda iki CarDefinition var: RacerCoupe_01 ve SupercarV10_01. Araç kurucusu çalıştırılmadı. Yarış tarafındaki kataloğun hazırlanıp bağlanması ve UI ile aynı sıralamayı kullanması gerekir; yarışta kayıtlı seçim uygulaması bu eksik katalog nedeniyle uçtan uca sınanmadı.
 - **CarStats dayanıklılık alanı sunmuyor.** Dört gerçek stat çizilir; dayanıklılık için veri olmadığı yazılır. Yarış tarafının ileride dayanıklılık/can değerini sunması gerekir; kütleden sahte dayanıklılık hesaplanmadı.
 - RacerCoupe tanımındaki görsel parça fiyatları şu anda 0. Arayüz bu gerçek fiyatları kullanır; araç verileri değiştirilmedi.
 - Model mesh'lerinde Read/Write kapalı olduğundan CarVisual birleştirme uyarısı verir ve desteklediği birleştirmesiz çizime döner. Önizleme çalışır; model import ayarları değiştirilmedi.
-- Yeni SupercarV10 FBX'i için henüz bir CarDefinition yok; bu nedenle listede görünmez. Kullanıcının mevcut dosyaları teslim commit'ine eklenmedi.
+- SupercarV10_01 artık tanımı ve stok görünüm prefab'ıyla entegre. Modelin kendisi ve malzemeleri entegrasyon teslimine dahil edildi; Blender kaynakları bu değişikliğin dışında.
 
 ## Doğrulama
 
@@ -76,3 +76,19 @@ Unity tarafından üretilen eşlik eden `.meta` dosyaları da teslimin parçası
 - [Ayarlar](Captures/Teslim/07-ayarlar.png)
 - [Kamera ve kontroller](Captures/Teslim/08-ayarlar-kontroller.png)
 - [Çevrimiçi oda](Captures/Teslim/09-oda-online.png)
+
+
+## Supercar V10 entegrasyonu
+
+`Harvester/Arayüz/Supercar V10'u Garaja Ekle` menüsü `SupercarGarageBuilder.cs` üzerinden verilen FBX'i garaja hazırlar. FBX değiştirilmez; import ayarında Read/Write açılır. Stok dışı parçalar/jantlar ile çıkartma ve lastik yazısı prefab'da kapatılır. Mevcut CarBuilder.EnsureDefinition API'si bu prefab'dan tanımı ölçer. Rebuild Race Car çalıştırılmaz; yarış kodu/prefab'ı ve sahneler değiştirilmez.
+
+- Görünen ad: V10 Orta Motor Süper Spor.
+- Başlangıç mağaza fiyatı: 8.000 Hurda; satın alınca garajdaki sahip olunan araçlar arasında seçilebilir.
+- 20 yuva: modelin 17 parça yuvası + jant, çıkartma ve lastik yazısı.
+- 6 boya yuvası, 6 performans kategorisi; temel performans mevcut varsayılanlarla başlar.
+- Ölçülen gövde: 4,55 × 2,00 × 1,21 m. Dingil: 2,66 m. Tekerlek yarıçapı ön 0,34 m / arka 0,36 m.
+- Dosyalar: `Assets/scripts/Editor/SupercarGarageBuilder.cs`, `Assets/Cars/SupercarV10_01/` içindeki model, malzemeler, kimlik, yeni prefab ve `_Tanim.asset`; güncellenen UI envanteri.
+- Doğrulama: envanterde iki araç; UI üzerinden 8.000 Hurda satın alma, garajdan seçme, GT kanadı takma, serbest gövde rengi uygulama ve CarLoadoutStore kayıt/yükleme geçti. Önizleme görsel olarak kontrol edildi, konsolda hata yok. Test sonrası oyuncunun para/sahiplik ve araç kayıtları geri yüklendi.
+- Ortak yarış CarCatalog eksikliği sürüyor; yarışta V10 sürüş testi bu kapsamda yapılmadı.
+
+[Ekran: V10 garaj](Captures/Teslim/10-supercar-v10-garaj.png) · [Ekran: V10 boya ve modifiye](Captures/Teslim/11-supercar-v10-modifiye.png)

@@ -15,3 +15,4 @@ MonoBehaviour:
   catalog: {fileID: 0}
   definitions:
   - {fileID: 11400000, guid: a3c33e50454ed5ad0ad8956827e4d5d5, type: 2}
+  - {fileID: 11400000, guid: 839ff3af947ddeda4b9d128ed9651e6a, type: 2}
