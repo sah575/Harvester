@@ -31,7 +31,7 @@ public static class TrackBuilder
     // Zemin
     const float GroundCell = 6f;
     const int GroundChunkCells = 24;    // ~144 m'lik parçalar: ışık başına nesne limiti düşük kalite ayarlarında da yetsin
-    const float GroundMargin = 320f;    // pistin çevresinde zeminin uzandığı mesafe (sis ötesini zaten gizler)
+    const float GroundMargin = 220f;    // pistin çevresinde zeminin uzandığı mesafe (sis ötesini zaten gizler)
     const float GroundBelowRoad = 0.3f;
     const float FlatBand = 12f;         // yol kenarından sonra düz kalan şerit
     const float BlendBand = 30f;        // düz şeritten doğal zemine geçiş (şev)
@@ -545,10 +545,21 @@ public static class TrackBuilder
         {
             for (int cx = 0; cx < nx / cells; cx++)
             {
-                var md = new MeshData(1);
-                for (int iz = 0; iz <= cells; iz++)
+                Vector2 center = new Vector2(x0 + (cx + .5f) * cells * GroundCell, z0 + (cz + .5f) * cells * GroundCell);
+                float nearest = float.MaxValue;
+                foreach (var frame in frames)
                 {
-                    for (int ix = 0; ix <= cells; ix++)
+                    Vector2 delta = new Vector2(frame.position.x, frame.position.z) - center;
+                    nearest = Mathf.Min(nearest, delta.sqrMagnitude);
+                }
+                // Tüm parça yolun düz/şev bandının dışındaysa 18 m hücre yeterlidir.
+                float safe = cells * GroundCell * .707107f + influence + GroundCell;
+                int step = nearest > safe * safe ? 3 : 1;
+                int grid = cells / step;
+                var md = new MeshData(1);
+                for (int iz = 0; iz <= cells; iz += step)
+                {
+                    for (int ix = 0; ix <= cells; ix += step)
                     {
                         int gx = cx * cells + ix + 1, gz = cz * cells + iz + 1; // dolgulu dizideki yer
                         float x = x0 + (gx - 1) * GroundCell, z = z0 + (gz - 1) * GroundCell;
@@ -561,19 +572,39 @@ public static class TrackBuilder
                     }
                 }
                 var tris = md.submeshes[0];
-                int row = cells + 1;
-                for (int iz = 0; iz < cells; iz++)
+                int row = grid + 1;
+                for (int iz = 0; iz < grid; iz++)
                 {
-                    for (int ix = 0; ix < cells; ix++)
+                    for (int ix = 0; ix < grid; ix++)
                     {
                         int v = iz * row + ix;
                         tris.Add(v); tris.Add(v + row); tris.Add(v + 1);
                         tris.Add(v + 1); tris.Add(v + row); tris.Add(v + row + 1);
                     }
                 }
+                if (step > 1)
+                {
+                    // İnce/seyrek sınırda küçük yükseklik farkı gökyüzüne açılan çatlak bırakmasın.
+                    GroundSkirt(md, 0, 1, grid);
+                    GroundSkirt(md, grid * row, 1, grid);
+                    GroundSkirt(md, 0, row, grid);
+                    GroundSkirt(md, grid, row, grid);
+                }
                 var mesh = md.ToMesh($"Zemin_{cx}_{cz}");
                 CreateMeshObject(mesh.name, groundParent, mesh, new[] { m.ground }, false, mesh);
             }
+        }
+    }
+
+    static void GroundSkirt(MeshData md, int first, int step, int segments)
+    {
+        for (int i = 0; i < segments; i++)
+        {
+            int a = first + i * step, b = a + step, low = md.vertices.Count;
+            md.vertices.Add(md.vertices[a] + Vector3.down * .5f); md.vertices.Add(md.vertices[b] + Vector3.down * .5f);
+            md.normals.Add(md.normals[a]); md.normals.Add(md.normals[b]); md.uvs.Add(md.uvs[a]); md.uvs.Add(md.uvs[b]);
+            var tris = md.submeshes[0];
+            tris.Add(a); tris.Add(b); tris.Add(low); tris.Add(b); tris.Add(low + 1); tris.Add(low);
         }
     }
 
@@ -751,9 +782,11 @@ public static class TrackBuilder
             lamp.transform.SetPositionAndRotation(basePos, Quaternion.LookRotation(-right * side, Vector3.up)); // ileri = yola doğru
 
             float poleTop = LampHeight + GroundBelowRoad;
-            CreateDecor("Direk", lamp.transform, new Vector3(0f, poleTop * 0.5f, 0f), new Vector3(0.22f, poleTop * 0.5f, 0.22f), m.pole, PrimitiveType.Cylinder);
-            CreateDecor("Kol", lamp.transform, new Vector3(0f, poleTop - 0.1f, 2.25f), new Vector3(0.12f, 0.12f, 4.5f), m.pole, PrimitiveType.Cube);
-            CreateDecor("Bas", lamp.transform, new Vector3(0f, poleTop - 0.25f, 4.4f), new Vector3(0.45f, 0.14f, 0.8f), m.lampHead, PrimitiveType.Cube);
+            var pole = CreateDecor("Direk", lamp.transform, new Vector3(0f, poleTop * 0.5f, 0f), new Vector3(0.22f, poleTop * 0.5f, 0.22f), m.pole, PrimitiveType.Cylinder);
+            var arm = CreateDecor("Kol", lamp.transform, new Vector3(0f, poleTop - 0.1f, 2.25f), new Vector3(0.12f, 0.12f, 4.5f), m.pole, PrimitiveType.Cube);
+            var head = CreateDecor("Bas", lamp.transform, new Vector3(0f, poleTop - 0.25f, 4.4f), new Vector3(0.45f, 0.14f, 0.8f), m.lampHead, PrimitiveType.Cube);
+
+            CombineLamp(lamp.transform, pole, arm, head);
 
             var lightGo = new GameObject("Isik");
             lightGo.transform.SetParent(lamp.transform, false);
@@ -766,6 +799,28 @@ public static class TrackBuilder
             light.shadows = LightShadows.None; // performans: lambalar gölge atmaz
             placed++;
         }
+    }
+
+    static void CombineLamp(Transform root, GameObject pole, GameObject arm, GameObject head)
+    {
+        Matrix4x4 inverse = root.worldToLocalMatrix;
+        var metal = new Mesh();
+        metal.CombineMeshes(new[] {
+            new CombineInstance { mesh = pole.GetComponent<MeshFilter>().sharedMesh, transform = inverse * pole.transform.localToWorldMatrix },
+            new CombineInstance { mesh = arm.GetComponent<MeshFilter>().sharedMesh, transform = inverse * arm.transform.localToWorldMatrix }
+        }, true, true);
+        var mesh = new Mesh { name = "LambaGovdesi" };
+        mesh.CombineMeshes(new[] {
+            new CombineInstance { mesh = metal, transform = Matrix4x4.identity },
+            new CombineInstance { mesh = head.GetComponent<MeshFilter>().sharedMesh, transform = inverse * head.transform.localToWorldMatrix }
+        }, false, true);
+        var go = new GameObject("LambaGovdesi"); go.transform.SetParent(root, false);
+        go.AddComponent<MeshFilter>().sharedMesh = mesh;
+        go.AddComponent<MeshRenderer>().sharedMaterials = new[] { pole.GetComponent<MeshRenderer>().sharedMaterial, head.GetComponent<MeshRenderer>().sharedMaterial };
+        int layer = LayerMask.NameToLayer(VisibilityBudget.DetailLayer); if (layer >= 0) go.layer = layer;
+        GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic);
+        Object.DestroyImmediate(metal); Object.DestroyImmediate(pole); Object.DestroyImmediate(arm); Object.DestroyImmediate(head);
+        meshCount -= 2; // üç süs yerine tek renderer; üçgen sayısı aynı
     }
 
     // ---------------------------------------------------------------- ışık, sis, kamera

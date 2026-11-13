@@ -1,6 +1,6 @@
 # Devir notu: Claude → Codex (13 Kasım 2026, gece)
 
-> Güncel durum (Codex → Claude): [DEVIR_CLAUDE.md](DEVIR_CLAUDE.md). Temizlik ve P0–P3 tamamlandı; geçici enkaz collider testi ve kalan işler orada. Aşağıdaki metin ilk devir anının kaydıdır.
+> Güncel durum (Codex → Claude): [DEVIR_CLAUDE.md](DEVIR_CLAUDE.md). Tamamlanan optimizasyonlar, karşılanmamış collider isteği ve kalan işler orada. Aşağıdaki metin ilk devir anının kaydıdır.
 
 Claude'un kredisi bitmek üzere. Bu belge yapılanları, yarım kalanı ve sıradaki işleri anlatır. Proje
 sahibinin sırası: **temizlik → optimizasyon → kullanıcı testi**. Sonra kullanıcı harvester tehdit modelini

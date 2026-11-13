@@ -10,7 +10,13 @@ Dal: `yaris-entegrasyon`. Main'e merge edilmedi. Önce bu belgeyi, ardından `DE
 - `3124cdf`: P2 Düşük / Orta / Yüksek; GPU'ya göre ilk seçim, ay ışığı/farlar piksel ışığı, LethalLook ve ayna renderer'ı korunuyor. Düşük 60 FPS/gölgesiz/ayna ~15 Hz; Orta/Yüksek Forward+.
 - `f46acd4`: P3 görüş mesafesi 200/250/300 m; Detay katmanı 9, küçük görseller 120 m'de kırpılır. Ayna 170 m, garaj önizlemesi değişmedi. İlk denemedeki GC artışı giderilip tekrar ölçüldü.
 
-Ölçümler: `docs/performans/Olcumler.md`, ayrıntılar `P0.md`–`P3.md`, JSON özetleri `sonuclar/`. Ham CSV ve günlükler `Builds/reports/` altında git dışındadır. OpenGL GPU süresini desteklemiyor: -1/sıfır geçerli örnek, CPU'dan türetilmiş GPU süresi yok. P2'de vSync değiştiğinden RTX hızlanmasının tamamı Forward+ kazancı değildir; Intel'in 16,79 ms p95'i 60 FPS sınırını içerir.
+- `ef408a6`: P4 stop point ışıkları kaldırıldı, uzak farlar sönüyor; düşük profilde anlamlı süre kazancı ölçülmedi.
+- `c2839f8`: P5 harvester görsel LOD 11.721 / 4.404 üçgen; fizik/hash aynı, üçgen p95 163 bin → 59 bin.
+- `a2a0672`: P6 araç malzeme önbelleği ve tekerlek birleştirme; draw medyanı 135 → 123, SetPass 44 → 24, render p95 1,79 → 1,22 ms.
+- `0463804`: P7 yalnız genel yerel efekt havuzu hazır. Enkaz kısmı kullanıcı isteğiyle bekliyor. Yarış tüketicisi olmadığı için FPS kazancı değildir.
+- `4a9fb3d`: P8 HUD önbelleği; GC medyanı 8.202 → 2.692 B/kare (%67,2 azalma).
+
+Ölçümler: `docs/performans/Olcumler.md`, ayrıntılar `P0.md`–`P8.md`, JSON özetleri `sonuclar/`. Ham CSV ve günlükler `Builds/reports/` altında git dışındadır. OpenGL GPU süresini desteklemiyor: -1/sıfır geçerli örnek, CPU'dan türetilmiş GPU süresi yok. P2'de vSync değiştiğinden RTX hızlanmasının tamamı Forward+ kazancı değildir; Intel'in 16,79 ms p95'i 60 FPS sınırını içerir.
 
 ## Kullanıcının son isteği: GEÇİCİ çarpışmasız enkaz testi
 
@@ -33,7 +39,7 @@ Doğrulama: Play mode'da katalogdaki beş aracın her biri için 17 enkaz Rigidb
 
 ## Kalan işler ve korunacak kararlar
 
-**P4–P10 henüz uygulanmadı.** Kullanıcı Claude'a geçeceğini belirttiği için bu devir P3 ve geçici enkaz testini kapsar. Sıradaki iş orijinal belgenin 3. bölümündeki P4 ışık bütçesidir; ölçerek, büyük adımları ayrı commit/push ederek devam et. P5–P10 da bekliyor. Tam optimizasyon veya kullanıcı test listesi tamamlandı diye raporlama; yeni PR açılmadı.
+Kullanıcı daha sonra P4–P10'a devam edilmesini istedi. **P4/P5/P6/P8 tamamlandı ve push edildi; P7'nin yalnız genel havuz kısmı tamamlandı. Enkaz/collider kısmı son kullanıcı talimatıyla bekliyor. P9 ölçümü sürüyor, P10 henüz yapılmadı.** Yeni PR açılmadı. Tam optimizasyon tamamlandı diye raporlama.
 
 `DEVIR_CODEX.md` 6. bölümündeki konulara dokunulmadı: harvester davranışı/boyutu, CarContactSolver, ertelenen frustum uyarısı, Windows build, VDS ayarları. Harvester spot menzili 130 m kaldı. Geçici enkaz isteği, harvester avlama modeli veya canlı araç–araç çarpışmasını değiştirme izni değildir.
 
