@@ -1,0 +1,107 @@
+{
+    "label": "p5-final-intel",
+    "gpu": "Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2)",
+    "api": "OpenGLCore",
+    "quality": "Düşük",
+    "unity": "6000.0.85f1",
+    "csv": "/home/zoro/harvester/Harvester/Builds/reports/p5-final-intel/p5-final-intel.csv",
+    "persistentDataPath": "/home/zoro/harvester/Harvester/Builds/perf-prefs/p5-final-intel/unity3d/DefaultCompany/Harvester3D",
+    "width": 1920,
+    "height": 1080,
+    "frames": 3592,
+    "minAlive": 3,
+    "maxAlive": 4,
+    "fourAliveFrames": 3371,
+    "capturedSeconds": 60.00980005040765,
+    "wallSeconds": 140.559256155,
+    "renderScale": 0.5,
+    "mirrorRequested": true,
+    "frameTimingAvailable": true,
+    "debrisCollisionDisabled": false,
+    "metrics": [
+        {
+            "name": "wall_ms",
+            "validSamples": 3592,
+            "p50": 16.67417772114277,
+            "p95": 16.798369586467744,
+            "p99": 16.839781776070596
+        },
+        {
+            "name": "cpu_ms",
+            "validSamples": 3592,
+            "p50": 16.680961,
+            "p95": 16.808533,
+            "p99": 16.85849
+        },
+        {
+            "name": "cpu_main_ms",
+            "validSamples": 3592,
+            "p50": 3.559327,
+            "p95": 5.832994,
+            "p99": 6.752032
+        },
+        {
+            "name": "cpu_render_ms",
+            "validSamples": 3592,
+            "p50": 0.988936,
+            "p95": 1.748042,
+            "p99": 2.144922
+        },
+        {
+            "name": "gpu_ms",
+            "validSamples": 0,
+            "p50": -1.0,
+            "p95": -1.0,
+            "p99": -1.0
+        },
+        {
+            "name": "present_wait_ms",
+            "validSamples": 3592,
+            "p50": 13.115887,
+            "p95": 14.9948,
+            "p99": 15.380741
+        },
+        {
+            "name": "draw_calls",
+            "validSamples": 3592,
+            "p50": 135.0,
+            "p95": 245.0,
+            "p99": 260.0
+        },
+        {
+            "name": "setpass",
+            "validSamples": 3592,
+            "p50": 44.0,
+            "p95": 75.0,
+            "p99": 79.0
+        },
+        {
+            "name": "batches",
+            "validSamples": 3592,
+            "p50": 132.0,
+            "p95": 229.0,
+            "p99": 255.0
+        },
+        {
+            "name": "triangles",
+            "validSamples": 3592,
+            "p50": 28049.0,
+            "p95": 59045.0,
+            "p99": 61429.0
+        },
+        {
+            "name": "shadow_casters",
+            "validSamples": 3592,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+        },
+        {
+            "name": "gc_bytes",
+            "validSamples": 3592,
+            "p50": 8202.0,
+            "p95": 15582.0,
+            "p99": 19776.0
+        }
+    ]
+}

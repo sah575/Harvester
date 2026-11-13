@@ -230,6 +230,8 @@ public static class HarvesterAIBuilder
         }
 
         if (tool == null) Debug.LogWarning("Tabla görseli (tool) bulunamadı");
+        // Fizik ölçümleri özgün modelden tamamlandıktan sonra yalnız görsel LOD'ları bağla.
+        HarvesterLodBuilder.Attach(root, model, ai);
         Debug.Log(string.Format("Harvester ölçüleri: gövde {0}, tabla görseli {1:F1} m genişlik → {2} m, tekerlek yarıçapları {3:F2}/{4:F2}",
             bodyCollider.size.ToString("F1"), hasHeader ? headerBounds.size.x : 0f, difficulty.headerWidth, radii[0], radii[2]));
     }
