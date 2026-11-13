@@ -344,6 +344,8 @@ public class lobby : NetworkBehaviour
         roomPanel.SetActive(false);
         SetMenuInteractable(true);
         menuStatusText.text = status;
+        var menus = GetComponent<Harvester.UI.LobbyMenus>();
+        if (menus != null) menus.ShowMain(status);
     }
 
     private void SetMenuInteractable(bool value)
@@ -412,6 +414,8 @@ public class lobby : NetworkBehaviour
 
         menuPanel.SetActive(false);
         roomPanel.SetActive(true);
+        var menus = GetComponent<Harvester.UI.LobbyMenus>();
+        if (menus != null) menus.ShowRoom();
         RefreshRoom();
     }
 
@@ -589,7 +593,7 @@ public class lobby : NetworkBehaviour
 
             string role = raceMode ? "<color=#8FB3D9>Yarışçı</color>"
                         : p.IsHarvester ? "<color=#E03A2F>HARVESTER</color>" : "<color=#8FB3D9>Robot</color>";
-            string tags = (p.ClientId == NetworkManager.ServerClientId ? "  <color=#C9A227>[host]</color>" : "")
+            string tags = (p.ClientId == NetworkManager.ServerClientId ? "  <color=#C9A227>[kurucu]</color>" : "")
                         + (isLocal ? "  <color=#AAA>(sen)</color>" : "");
             slotTexts[i].text = p.Name + tags + "<pos=70%>" + role;
         }
@@ -613,6 +617,6 @@ public class lobby : NetworkBehaviour
         startButton.interactable = canStart;
 
         if (!canStart) roomStatusText.text = reason;
-        else roomStatusText.text = IsServer ? "Hazır! Oyunu başlatabilirsin." : "Host'un oyunu başlatması bekleniyor...";
+        else roomStatusText.text = IsServer ? "Hazır! Oyunu başlatabilirsin." : "Oda kurucusunun oyunu başlatması bekleniyor...";
     }
 }
