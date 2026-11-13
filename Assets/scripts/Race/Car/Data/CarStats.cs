@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Harvester.Race
 {
     /// <summary>
-    /// Arabanın fizik değerleri. RaceCar'daki ayar alanlarıyla birebir aynı adlarda ve anlamda.
+    /// Arabanın fizik değerleri. RaceCar'daki ayar alanlarıyla birebir aynı adlarda ve anlamda (artı dayanıklılık).
     /// Bir arabanın tanımında (CarDefinition.baseStats) durur; performans geliştirmeleri bunun üstüne uygulanır
     /// (CarDefinition.ComputeStats). Varsayılanlar, Kenney arabasında ayarlanıp test edilen değerler.
     /// Tekerlek konumu, yarıçapı ve dingil mesafesi burada değil: onlar modelden ölçülür (CarGeometry).
@@ -80,6 +80,21 @@ namespace Harvester.Race
         [Tooltip("Havada dönmenin sönümü (1/sn)")]
         public float airAngularDamping;
 
+        [Header("Dayanıklılık")]
+        [Tooltip("Dayanıklılık puanı (0–100): çarpmaya ve harvester itmesine direnç. 60 = referans (itme olduğu gibi), " +
+                 "her 10 puan itmeyi %10 azaltır/artırır (bkz. HitScale). İleride hasar da buna bağlanacak.")]
+        public float durability;
+
+        /// <summary>Referans dayanıklılık: bu değerde çarpmalar olduğu gibi uygulanır.</summary>
+        public const float ReferenceDurability = 60f;
+
+        /// <summary>Çarpma hız değişiminin çarpanı: 60 → 1, 80 → 0.8, 40 → 1.2 (0.5–1.5 arası). 0 (eski kayıt) → 1.</summary>
+        public static float HitScale(float durability)
+        {
+            if (durability <= 0f) return 1f;
+            return Mathf.Clamp(1f - (durability - ReferenceDurability) / 100f, 0.5f, 1.5f);
+        }
+
         /// <summary>Kenney arabasında ayarlanıp test edilmiş değerler (RaceCar.prefab, 13 Kasım).</summary>
         public static CarStats Default
         {
@@ -117,6 +132,7 @@ namespace Harvester.Race
                     antiRoll = 9000f,
                     airUpright = 4f,
                     airAngularDamping = 1.5f,
+                    durability = ReferenceDurability,
                 };
             }
         }
@@ -160,6 +176,7 @@ namespace Harvester.Race
                 case CarStat.VirajDemiri: return antiRoll;
                 case CarStat.HavadaDuzelme: return airUpright;
                 case CarStat.HavadaSonum: return airAngularDamping;
+                case CarStat.Dayaniklilik: return durability;
             }
             return 0f;
         }
@@ -197,6 +214,7 @@ namespace Harvester.Race
                 case CarStat.VirajDemiri: antiRoll = value; break;
                 case CarStat.HavadaDuzelme: airUpright = value; break;
                 case CarStat.HavadaSonum: airAngularDamping = value; break;
+                case CarStat.Dayaniklilik: durability = Mathf.Clamp(value, 1f, 100f); break;
             }
         }
     }
@@ -209,5 +227,6 @@ namespace Harvester.Race
         OnTutus, ArkaTutus, LastikSurtunmesi, ElFreniArkaTutus, DriftSapma, TutusKuvvetYuksekligi,
         Kutle, AgirlikMerkeziYuksekligi, SuspansiyonYukari, SuspansiyonSarkma, Yay, Sonum, VirajDemiri,
         HavadaDuzelme, HavadaSonum,
+        Dayaniklilik,
     }
 }

@@ -72,11 +72,56 @@ public static partial class CarBuilder
             if (def == null) continue;
             if (!catalog.cars.Contains(def)) catalog.cars.Add(def);
         }
-        catalog.cars.RemoveAll(d => d == null);
+        // Listede olmayan tanımlar da (yeni arabalar) sona; mevcutlar yeniden ölçülür
+        foreach (var def in FindAllDefinitions())
+        {
+            if (catalog.cars.Contains(def)) continue;
+            MeasureDefinition(def, false);
+            catalog.cars.Add(def);
+        }
+        // Boş kayıtlar SİLİNMEZ: silmek sonraki arabaların ağ indeksini kaydırır. Yer tutucu kalır (Resolve ilk arabaya düşer).
+        for (int i = 0; i < catalog.cars.Count; i++)
+            if (catalog.cars[i] == null) Debug.LogWarning("Araba kataloğunda " + i + ". kayıt boş (tanım silinmiş); indeks korunuyor: " + CatalogPath);
         EditorUtility.SetDirty(catalog);
         AssetDatabase.SaveAssets();
         Debug.Log("Araba kataloğu güncellendi: " + CatalogPath + " (" + catalog.Count + " araba)");
         return catalog;
+    }
+
+    /// <summary>Assets/Cars altındaki bütün araba tanımları, kimliğe göre sıralı (kararlı).</summary>
+    public static List<CarDefinition> FindAllDefinitions()
+    {
+        var list = new List<CarDefinition>();
+        foreach (var guid in AssetDatabase.FindAssets("t:CarDefinition", new[] { "Assets/Cars" }))
+        {
+            var def = AssetDatabase.LoadAssetAtPath<CarDefinition>(AssetDatabase.GUIDToAssetPath(guid));
+            if (def != null && !list.Contains(def)) list.Add(def);
+        }
+        list.Sort((a, b) => string.CompareOrdinal(a.id, b.id));
+        return list;
+    }
+
+    /// <summary>Katalogda olmayan tanımları sona ekler; mevcut sıraya dokunmaz. Katalog yoksa bir şey yapmaz.</summary>
+    public static int AppendNewDefinitionsToCatalog()
+    {
+        var catalog = AssetDatabase.LoadAssetAtPath<CarCatalog>(CatalogPath);
+        if (catalog == null) return 0;
+        int added = 0;
+        foreach (var def in FindAllDefinitions())
+        {
+            if (catalog.cars.Contains(def) || string.IsNullOrEmpty(def.id)) continue;
+            catalog.cars.Add(def);
+            // Birleştirme (CarVisual) mesh okur: yeni arabanın FBX import ayarında Read/Write açılır (sadece .meta)
+            MakeModelReadable(def);
+            added++;
+            Debug.Log("Araba kataloğuna eklendi (indeks " + (catalog.cars.Count - 1) + "): " + def.id);
+        }
+        if (added > 0)
+        {
+            EditorUtility.SetDirty(catalog);
+            AssetDatabase.SaveAssetIfDirty(catalog);
+        }
+        return added;
     }
 
     /// <summary>Assets/Cars/&lt;id&gt;/&lt;id&gt;_Tanim.asset'i oluşturur ya da günceller ve modelden ölçer.</summary>
@@ -472,5 +517,20 @@ public class CarDefinitionEditor : Editor
             CarBuilder.MeasureDefinition(def, false);
         EditorGUILayout.Space();
         DrawDefaultInspector();
+    }
+}
+
+/// <summary>Yeni araba tanımı (Assets/Cars/*/*_Tanim.asset) içeri alınınca kataloğun SONUNA ekler; mevcut indeksler değişmez.</summary>
+public sealed class CarCatalogPostprocessor : AssetPostprocessor
+{
+    static void OnPostprocessAllAssets(string[] imported, string[] deleted, string[] moved, string[] previous)
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        foreach (var p in imported)
+            if (p.StartsWith("Assets/Cars/", System.StringComparison.Ordinal) && p.EndsWith("_Tanim.asset", System.StringComparison.Ordinal))
+            {
+                EditorApplication.delayCall += () => CarBuilder.AppendNewDefinitionsToCatalog();
+                return;
+            }
     }
 }

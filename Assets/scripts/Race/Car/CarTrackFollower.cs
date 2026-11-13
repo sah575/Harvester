@@ -28,6 +28,11 @@ namespace Harvester.Race
         public float MaxLateralAccel = 13f;
         [Tooltip("Hedef hıza inmek için hesapta kullanılan fren ivmesi (m/sn²); arabanınkinden biraz düşük güvenli")]
         public float PlanningBrake = 14f;
+        [Tooltip("Açıksa viraj ivmesi ve fren planı arabanın değerlerinden alınır (viraj sınırı × CornerFraction, fren × BrakeFraction); " +
+                 "kapalıysa MaxLateralAccel ve PlanningBrake. Varsayılan arabada (15 / 22) ikisi aynı sonucu verir.")]
+        public bool AdaptToCar = true;
+        [Range(0.5f, 1f)] public float CornerFraction = 0.87f;
+        [Range(0.3f, 1f)] public float BrakeFraction = 0.64f;
         [Tooltip("Hedef noktanın en az uzaklığı (m)")]
         public float MinLookahead = 8f;
         [Tooltip("Hedef noktanın hızla artan uzaklığı (sn): uzaklık = en az + hız * bu")]
@@ -144,10 +149,14 @@ namespace Harvester.Race
             car.SetExternalInput(throttle, Mathf.Clamp(steer, -1f, 1f), handbrake);
         }
 
+        private float LateralLimit => AdaptToCar && car.MaxCornerAccel > 1f ? car.MaxCornerAccel * CornerFraction : MaxLateralAccel;
+        private float BrakeLimit => AdaptToCar && car.BrakeDeceleration > 1f ? car.BrakeDeceleration * BrakeFraction : PlanningBrake;
+
         private float PlanSpeed(RaceTrack track, float d, float speed)
         {
             float top = car.TopSpeed;
-            float horizon = Mathf.Max(30f, speed * speed / (2f * PlanningBrake) + 20f);
+            float lateralLimit = LateralLimit, planningBrake = BrakeLimit;
+            float horizon = Mathf.Max(30f, speed * speed / (2f * planningBrake) + 20f);
             float best = top;
             const float step = 4f, span = 8f;
             for (float s = 0f; s <= horizon; s += step)
@@ -156,9 +165,9 @@ namespace Harvester.Race
                 Vector3 b = Flat(track.GetForward(d + s + span * 0.5f));
                 float angle = Vector3.Angle(a, b) * Mathf.Deg2Rad;
                 float k = angle / span;
-                float corner = k > 1e-4f ? Mathf.Sqrt(MaxLateralAccel / k) : top;
+                float corner = k > 1e-4f ? Mathf.Sqrt(lateralLimit / k) : top;
                 // Oraya kadar frenle inebileceğimiz hız
-                float allowed = Mathf.Sqrt(corner * corner + 2f * PlanningBrake * s);
+                float allowed = Mathf.Sqrt(corner * corner + 2f * planningBrake * s);
                 if (allowed < best) best = allowed;
             }
             return Mathf.Min(best, top);

@@ -1,19 +1,29 @@
 {
   "id": "GrandTourerV8_01",
-  "ad_tr": "V8 Uzun Kaput Grand Tourer",
+  "gorunenAd": "V8 Uzun Kaput",
   "sinif": "grandtourer",
+  "cekis": "RWD",
+  "tahminiKutleKg": 1580,
+  "karakter": {
+    "sonHiz": 4,
+    "ivme": 2,
+    "yolTutus": 3,
+    "fren": 3,
+    "dayaniklilik": 5
+  },
+  "aciklama": "Ön-orta motorlu V8 grand tourer: dengeli, yüksek hızda sakin ve en sağlam gövde; ağırlığı yüzünden geç hızlanır.",
   "ilham": "Ön-orta motorlu uzun kaputlu V8 pist/yol grand tourer kupalar (özgün tasarım)",
   "boyut_m": {
     "boy": 4.594,
-    "en": 2.000,
-    "yukseklik": 1.260,
-    "dingil": 2.640
+    "en": 2.0,
+    "yukseklik": 1.26,
+    "dingil": 2.64
   },
   "tekerlek": {
-    "on_yaricap": 0.340,
-    "on_genislik": 0.280,
-    "arka_yaricap": 0.360,
-    "arka_genislik": 0.320
+    "on_yaricap": 0.34,
+    "on_genislik": 0.28,
+    "arka_yaricap": 0.36,
+    "arka_genislik": 0.32
   },
   "ozellikler": [
     "Uzun çift güç kubbeli (power-dome) V8 kaput ve geriye çekilmiş fastback kabin (cab-backward)",

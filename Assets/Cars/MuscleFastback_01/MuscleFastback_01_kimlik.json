@@ -1,19 +1,29 @@
 {
   "id": "MuscleFastback_01",
-  "ad_tr": "V8 Kaslı Fastback Kupa",
+  "gorunenAd": "V8 Kaslı Fastback",
   "sinif": "muscle",
+  "cekis": "RWD",
+  "tahminiKutleKg": 1560,
+  "karakter": {
+    "sonHiz": 4,
+    "ivme": 5,
+    "yolTutus": 2,
+    "fren": 2,
+    "dayaniklilik": 4
+  },
+  "aciklama": "Önden motorlu V8: kalkışta ve düzlükte en güçlüsü, virajda ağır ve geç döner; el freninde kuyruğu kolay bırakır, drift'e yatkın.",
   "ilham": "Önden motorlu Amerikan V8 kaslı fastback pist/yol kupaları (özgün tasarım)",
   "boyut_m": {
-    "boy": 4.740,
-    "en": 1.990,
-    "yukseklik": 1.360,
-    "dingil": 2.720
+    "boy": 4.74,
+    "en": 1.99,
+    "yukseklik": 1.36,
+    "dingil": 2.72
   },
   "tekerlek": {
-    "on_yaricap": 0.350,
-    "on_genislik": 0.280,
-    "arka_yaricap": 0.370,
-    "arka_genislik": 0.310
+    "on_yaricap": 0.35,
+    "on_genislik": 0.28,
+    "arka_yaricap": 0.37,
+    "arka_genislik": 0.31
   },
   "ozellikler": [
     "Yüksek omuz çizgisi, merkezi güç kubbeli (cowl-induction) V8 kaput ve keskin Kammback fastback tavan eğimi",

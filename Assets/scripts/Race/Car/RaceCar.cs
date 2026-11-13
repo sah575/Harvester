@@ -143,6 +143,8 @@ namespace Harvester.Race
         [Header("Çarpma")]
         [Tooltip("ApplyHit'te çarpma noktasından gelen dönme etkisinin çarpanı")]
         [SerializeField] private float hitSpin = 0.5f;
+        [Tooltip("Dayanıklılık puanı (0–100). 60'ta çarpma olduğu gibi uygulanır; her 10 puan itmeyi %10 azaltır (CarStats.HitScale).")]
+        [SerializeField] private float durability = CarStats.ReferenceDurability;
 
         [Header("Araba tanımı")]
         [Tooltip("Araba kataloğu. Boşsa araba bu sınıftaki ayarlarla ve prefab'taki modelle sürer (eski davranış). " +
@@ -217,6 +219,10 @@ namespace Harvester.Race
         public float TopSpeed => topSpeed;
         public float WheelBase => wheelBase;
         public float BrakeDeceleration => brakeDeceleration;
+        /// <summary>Dönüş yardımının izin verdiği en büyük yanal ivme (m/sn²); botlar viraj hızını buna göre planlar.</summary>
+        public float MaxCornerAccel => maxCornerAccel;
+        /// <summary>Dayanıklılık puanı (0–100).</summary>
+        public float Durability => durability;
         /// <summary>Şu anki hızda direksiyonun en büyük açısı (derece).</summary>
         public float CurrentMaxSteerAngle => Mathf.Lerp(maxSteerAngle, highSpeedSteerAngle, Mathf.Clamp01(Mathf.Abs(forwardSpeed) / steerFalloffSpeed));
         /// <summary>Girdi klavyeden değil SetExternalInput'tan mı geliyor (bot, test sürücüsü).</summary>
@@ -292,7 +298,7 @@ namespace Harvester.Race
                 // Ağsız test: sahnedeki ilk araba yerel oyuncunun arabası olur.
                 if (Local == null) BecomeLocal();
                 if (catalog != null && !hasAppliedLoadout)
-                    ApplyLoadout(Local == this ? CarLoadoutStore.Load(catalog) : BotLoadout(GetInstanceID()));
+                    ApplyLoadout(Local == this ? CarOwnership.LoadForRace(catalog) : BotLoadout(BotSeed()));
             }
         }
 
@@ -304,12 +310,14 @@ namespace Harvester.Race
             {
                 if (IsOwner)
                 {
-                    // Oyuncunun arabası kayıtlı seçimi, sunucunun botları varsayılanı (farklı renkte) alır
-                    var l = NetworkObject.IsPlayerObject ? CarLoadoutStore.Load(catalog) : BotLoadout((int)NetworkObjectId);
+                    // Oyuncunun arabası kayıtlı seçimi (sahip olunmayanlar varsayılana düşer), sunucunun botları
+                    // katalogdan sırayla farklı bir arabayı farklı renkte alır
+                    var l = NetworkObject.IsPlayerObject ? CarOwnership.LoadForRace(catalog) : BotLoadout(NetworkBotSeed());
                     loadout.Value = l;
                     ApplyLoadout(l);
                 }
-                else ApplyLoadout(loadout.Value);
+                // Uzak kopya: sahibinin seçimi henüz gelmediyse (boş) model kurulmaz, OnValueChanged'de kurulur
+                else if (loadout.Value.IsValid) ApplyLoadout(loadout.Value);
             }
             if (IsOwner) BecomeLocal();
             if (eliminated.Value) ApplyElimination();
@@ -659,6 +667,8 @@ namespace Harvester.Race
         private void ApplyHitLocal(Vector3 velocityChange, Vector3 worldPoint)
         {
             if (body.isKinematic) return;
+            // Dayanıklı araba daha az savrulur, narin araba daha çok (araba–araba ve harvester çarpmaları)
+            velocityChange *= CarStats.HitScale(durability);
             body.AddForce(velocityChange, ForceMode.VelocityChange);
             // Kenardan vurulan araba savrulsun ama takla atmasın: sadece Y ekseninde dönme
             Vector3 r = worldPoint - body.worldCenterOfMass;
@@ -720,7 +730,9 @@ namespace Harvester.Race
             if (visual != null && visual.Model != null)
             {
                 // Tanımlı model: tekerlekler, paneller (kapı, çamurluk, kaput, tampon, tavan) ve kasa ayrı uçar
+                string id = visual.Definition != null ? visual.Definition.id : "?";
                 visual.Shatter(carVelocity, shatterSpeed, shatterLift, debrisLifetime);
+                Debug.Log("[Araba] Parçalandı: " + name + (IsSpawned ? " sahip=" + OwnerClientId : "") + " araba=" + id);
                 for (int i = 0; i < wheelVisuals.Length; i++) wheelVisuals[i] = null;
                 for (int i = 0; i < wheelHubs.Length; i++) wheelHubs[i] = null;
                 return;
@@ -830,11 +842,30 @@ namespace Harvester.Race
             ApplyLoadout(current);
         }
 
-        /// <summary>Botun seçimi: varsayılan araba, gövde rengi kimliğe göre farklı.</summary>
+        /// <summary>Ağdaki botun sırası: kendisinden önce oluşturulan botların sayısı + 1 (ilk bot katalogdaki 2. araba).</summary>
+        private int NetworkBotSeed()
+        {
+            int n = 1;
+            for (int i = 0; i < All.Count && All[i] != this; i++)
+                if (All[i] != null && All[i].IsSpawned && !All[i].NetworkObject.IsPlayerObject) n++;
+            return n;
+        }
+
+        /// <summary>Ağsız denemede botun sırası: sahnedeki arabalar arasındaki yeri (isimden bağımsız, kararlı).</summary>
+        private int BotSeed()
+        {
+            int i = All.IndexOf(this);
+            return i >= 0 ? i : GetInstanceID();
+        }
+
+        /// <summary>Botun seçimi: katalogdan sıraya göre bir araba (stok), gövde rengi sıraya göre farklı.</summary>
         private CarLoadout BotLoadout(int seed)
         {
-            var l = catalog.DefaultLoadout(0);
-            var def = catalog.Get(0);
+            int count = Mathf.Max(1, catalog.Count);
+            int index = ((seed % count) + count) % count;
+            if (catalog.Get(index) == null) index = 0;
+            var l = catalog.DefaultLoadout(index);
+            var def = catalog.Get(index);
             if (def != null && def.paints.Count > 0)
             {
                 var rng = new System.Random(seed * 7919 + 17);
@@ -842,6 +873,19 @@ namespace Harvester.Race
                 l.SetPaint(Mathf.Max(0, def.PaintIndex("Paint_Body")), c);
             }
             return l;
+        }
+
+        /// <summary>
+        /// Test ve bot kancası: arabanın seçimini verilen katalog indeksine çevirir (stok, isteğe bağlı gövde rengi).
+        /// Ağda sadece sahibi yazabilir; kayıt (CarLoadoutStore) değişmez.
+        /// </summary>
+        public void SetDefinitionIndex(int index, Color? bodyColor = null)
+        {
+            if (catalog == null || catalog.Get(index) == null) return;
+            var l = catalog.DefaultLoadout(index);
+            var def = catalog.Get(index);
+            if (bodyColor.HasValue && def.paints.Count > 0) l.SetPaint(Mathf.Max(0, def.PaintIndex("Paint_Body")), bodyColor.Value);
+            SetLoadout(l);
         }
 
         /// <summary>Seçimi uygular: tanım değiştiyse modeli kurar, geometriyi ve collider'ı ayarlar; parçalar, renkler, fizik.</summary>
@@ -873,6 +917,10 @@ namespace Harvester.Race
             ApplyStats(def.ComputeStats(value));
             appliedLoadout = value;
             hasAppliedLoadout = true;
+            Color32 body = value.GetPaint(Mathf.Max(0, def.PaintIndex("Paint_Body")));
+            Debug.Log("[Araba] Seçim uygulandı: " + name + (IsSpawned ? " sahip=" + OwnerClientId + (IsOwner ? " (ben)" : "") : "")
+                      + " araba=" + def.id + " gövde=#" + ColorUtility.ToHtmlStringRGB(body) + " son hız=" + topSpeed.ToString("F1")
+                      + " birleşik=" + visual.IsCombined);
         }
 
         private void ApplyGeometry(CarGeometry g)
@@ -920,6 +968,7 @@ namespace Harvester.Race
                 mass = body != null ? body.mass : 1200f, centerOfMassHeight = centerOfMass.y,
                 suspensionUp = suspensionUp, suspensionDroop = suspensionDroop, springStrength = springStrength,
                 damperStrength = damperStrength, antiRoll = antiRoll, airUpright = airUpright, airAngularDamping = airAngularDamping,
+                durability = durability,
             };
         }
 
@@ -954,6 +1003,7 @@ namespace Harvester.Race
             antiRoll = s.antiRoll;
             airUpright = s.airUpright;
             airAngularDamping = s.airAngularDamping;
+            durability = s.durability > 0f ? s.durability : CarStats.ReferenceDurability;
             float comZ = currentDefinition != null ? currentDefinition.geometry.centerOfMassZ : centerOfMass.z;
             centerOfMass = new Vector3(0f, s.centerOfMassHeight, comZ);
             if (body != null)

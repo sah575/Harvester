@@ -14,6 +14,8 @@ namespace Harvester.Race
         Suspansiyon = 4,
         Agirlik = 5,
         Nitro = 6,
+        /// <summary>Gövde güçlendirme: dayanıklılık artar, araba biraz ağırlaşır.</summary>
+        Govde = 7,
     }
 
     /// <summary>Bir parça yuvasının türü: modelde nesnelerin nasıl adlandırıldığı ve nasıl seçildiği.</summary>

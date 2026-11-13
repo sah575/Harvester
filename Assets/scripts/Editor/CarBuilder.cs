@@ -25,8 +25,10 @@ public static partial class CarBuilder
     const string TestScenePath = "Assets/Scenes/carTest.unity";
     const string CatalogPath = "Assets/Cars/ArabaKatalogu.asset";
 
-    // Katalog sırası = ağ indeksi. Yeni araba sona eklenir.
-    static readonly string[] Cars = { "RacerCoupe_01" };
+    // Katalog sırası = ağ indeksi (CarLoadout.definition) ve garajdaki sıra. İLK KURULUM sırası budur; katalog asset'i
+    // varken mevcut sıra hiç değişmez, bu listede olmayan yeni tanımlar (Assets/Cars/*/*_Tanim.asset) sona eklenir.
+    // Yeni araba: bu listenin sonuna ekle (ya da sadece tanımını oluştur, CarCatalogPostprocessor sona ekler).
+    static readonly string[] Cars = { "RacerCoupe_01", "SupercarV10_01", "GrandTourerV8_01", "MuscleFastback_01", "HotHatch_01" };
 
     // Tekerlek sırası RaceCar ile aynı: ön sol, ön sağ, arka sol, arka sağ
     static readonly string[] WheelNames = { "wheel-front-left", "wheel-front-right", "wheel-back-left", "wheel-back-right" };
@@ -153,6 +155,7 @@ public static partial class CarBuilder
         so.FindProperty("antiRoll").floatValue = s.antiRoll;
         so.FindProperty("airUpright").floatValue = s.airUpright;
         so.FindProperty("airAngularDamping").floatValue = s.airAngularDamping;
+        so.FindProperty("durability").floatValue = s.durability > 0f ? s.durability : CarStats.ReferenceDurability;
     }
 
     static void MakeModelReadable(CarDefinition def)
