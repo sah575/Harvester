@@ -59,6 +59,9 @@ public class lobby : NetworkBehaviour
     [SerializeField] private Button copyCodeButton;
 
     [SerializeField] private string gameSceneName = "world";
+    [Tooltip("Yarış modu: herkes yarışçı, harvester'ı yapay zekâ sürer, 'race' sahnesi yüklenir. Kapalıysa eski saklambaç ('world').")]
+    [SerializeField] private bool raceMode = true;
+    const string RaceSceneName = "race";
 
     // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
     public static string PendingStatus;
@@ -523,7 +526,7 @@ public class lobby : NetworkBehaviour
         }
 
         gameStarted = true;
-        NetworkManager.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
+        NetworkManager.SceneManager.LoadScene(raceMode ? RaceSceneName : gameSceneName, LoadSceneMode.Single);
     }
 
     private bool CanStart(out string reason)
@@ -533,8 +536,9 @@ public class lobby : NetworkBehaviour
             reason = "Başlamak için en az " + MinPlayers + " oyuncu gerekli.";
             return false;
         }
-        // Tek kişilik debug turunda rol serbest: robot seçen Harvester'sız dolaşır
-        if (HarvesterIndex() < 0 && players.Count > 1)
+        // Tek kişilik debug turunda rol serbest: robot seçen Harvester'sız dolaşır.
+        // Yarış modunda rol yok: harvester'ı yapay zekâ sürüyor.
+        if (!raceMode && HarvesterIndex() < 0 && players.Count > 1)
         {
             reason = "Bir oyuncu Harvester'ı seçmeli.";
             return false;
@@ -583,7 +587,8 @@ public class lobby : NetworkBehaviour
             bool isLocal = p.ClientId == localId;
             if (isLocal) localIsHarvester = p.IsHarvester;
 
-            string role = p.IsHarvester ? "<color=#E03A2F>HARVESTER</color>" : "<color=#8FB3D9>Robot</color>";
+            string role = raceMode ? "<color=#8FB3D9>Yarışçı</color>"
+                        : p.IsHarvester ? "<color=#E03A2F>HARVESTER</color>" : "<color=#8FB3D9>Robot</color>";
             string tags = (p.ClientId == NetworkManager.ServerClientId ? "  <color=#C9A227>[host]</color>" : "")
                         + (isLocal ? "  <color=#AAA>(sen)</color>" : "");
             slotTexts[i].text = p.Name + tags + "<pos=70%>" + role;
@@ -591,6 +596,8 @@ public class lobby : NetworkBehaviour
 
         harvesterButton.interactable = !localIsHarvester && harvesterIndex < 0;
         robotButton.interactable = localIsHarvester;
+        // Yarışta rol seçimi yok: Harvester/Robot düğmelerinin satırı gizlenir
+        harvesterButton.transform.parent.gameObject.SetActive(!raceMode);
 
         var relay = NetworkManager.NetworkConfig.NetworkTransport as RelayTransport;
         roomCodeRow.SetActive(relay != null);

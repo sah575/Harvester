@@ -54,7 +54,7 @@ public static class LobbyUIBuilder
         // --- Ana menü ---
         var menu = CreatePanel("MenuPanel", root, new Vector2(560, 0));
         CreateText("Title", menu, "HARVESTER", 72, FontStyles.Bold, AccentColor, 90);
-        CreateText("Subtitle", menu, "1 Harvester  vs  3 Robot", 24, FontStyles.Normal, MutedTextColor, 36);
+        CreateText("Subtitle", menu, "Yarış. Arkandaki harvester'a yakalanma.", 24, FontStyles.Normal, MutedTextColor, 36);
         CreateSpacer(menu, 12);
         var tabRow = CreateRow(menu, 52);
         var onlineTab = CreateTab(tabRow, resources, "ONLINE");
@@ -87,7 +87,7 @@ public static class LobbyUIBuilder
         // --- Oda ---
         var room = CreatePanel("RoomPanel", root, new Vector2(760, 0));
         CreateText("Title", room, "ODA", 56, FontStyles.Bold, TextColor, 72);
-        CreateText("Subtitle", room, "1 kişi Harvester'ı sürer, diğerleri robot olarak kaçar", 22, FontStyles.Normal, MutedTextColor, 34);
+        CreateText("Subtitle", room, "2–4 yarışçı. Harvester'ı yapay zekâ sürüyor, geride kalanı biçer.", 22, FontStyles.Normal, MutedTextColor, 34);
         CreateSpacer(room, 6);
         var codeRow = CreateRow(room, 60);
         codeRow.name = "CodeRow";
