@@ -9,6 +9,7 @@ p.add_argument('--label',default='temizlik')
 p.add_argument('--seconds',type=float,default=60)
 p.add_argument('--gpu',choices=['intel','nvidia'],default='intel')
 p.add_argument('--api',choices=['auto','vulkan','glcore'],default='auto')
+p.add_argument('--no-debris-collision',action='store_true',help='Geçici test: elenen araç enkazlarının collider\'larını kapatır.')
 a=p.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9_-]+',a.label):p.error('Etiket yalnızca harf, rakam, alt çizgi veya tire içermeli.')
 root=Path(__file__).resolve().parents[1]
@@ -21,6 +22,7 @@ if a.mode=='perf':
 exe=root/'Builds/LinuxTest/Harvester.x86_64'
 common=[str(exe),'-screen-fullscreen','0','-screen-width','1920' if a.mode=='perf' else '1280','-screen-height','1080' if a.mode=='perf' else '720']
 if a.api!='auto':common+=['-force-'+a.api]
+if a.no_debris_collision:common+=['-testEnkazCarpismaYok']
 processes=[]
 def launch(role,flags):
     log=out/(role+'.log')
@@ -29,7 +31,7 @@ def launch(role,flags):
     processes.append(proc);print(f'{role}: pid={proc.pid}, log={log}',flush=True);return proc,log
 
 def read(path):return path.read_text(errors='replace') if path.exists() else ''
-result={'label':a.label,'gpu_requested':a.gpu,'api_requested':a.api,'mode':a.mode}
+result={'label':a.label,'gpu_requested':a.gpu,'api_requested':a.api,'mode':a.mode,'debris_collision_disabled_requested':a.no_debris_collision}
 try:
     if a.mode=='online':
         host,hlog=launch('host',['-autoHost','-autoOnline','-autoStart','2','-autoRounds','1','-autoDrive','-autoTrace','-autoShot','-autoElim','8'])
@@ -51,6 +53,9 @@ try:
         result['passed']=all(result[k] for k in ['host_race_started','host_finished','host_returned','client_returned'])
         result['network_mismatch']='NetworkConfig mismatch' in h+c or 'PrefabHash' in h+c
         result['passed']=result['passed'] and not result['network_mismatch']
+        test_marker='[Test] GEÇİCİ: elenen araç enkazlarının'
+        result['debris_collision_disabled_actual']=test_marker in h and test_marker in c
+        result['passed']=result['passed'] and result['debris_collision_disabled_actual']==a.no_debris_collision
     else:
         host,hlog=launch('host',['-autoHost','-autoStart','1','-autoRounds','100','-autoBots','3','-autoDrive','-autoLaps','999','-perfProbe',str(a.seconds),'-perfLabel',a.label,'-perfOutput',str(out)])
         deadline=time.monotonic()+a.seconds*15+120
@@ -66,8 +71,10 @@ try:
             summary=json.loads(summary_path.read_text())
             result['actual_gpu']=summary['gpu'];result['actual_api']=summary['api']
             result['actual_resolution']=[summary['width'],summary['height']]
+            result['debris_collision_disabled_actual']=summary.get('debrisCollisionDisabled',False)
             gpu_ok=('NVIDIA' in summary['gpu']) if a.gpu=='nvidia' else ('Intel' in summary['gpu'])
             result['passed']=result['passed'] and gpu_ok and summary['width']==1920 and summary['height']==1080
+            result['passed']=result['passed'] and result['debris_collision_disabled_actual']==a.no_debris_collision
 
     for path in out.glob('*.log'):
         text=read(path)

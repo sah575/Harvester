@@ -744,6 +744,7 @@ namespace Harvester.Race
                 piece.SetParent(null, true);
                 piece.gameObject.AddComponent<BoxCollider>();
                 var rb = piece.gameObject.AddComponent<Rigidbody>();
+                TestDebrisCollision.Configure(rb);
                 rb.mass = 30f;
                 Vector3 away = piece.position - center;
                 away.y = 0f;

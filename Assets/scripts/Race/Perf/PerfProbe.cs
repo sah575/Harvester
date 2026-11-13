@@ -29,7 +29,7 @@ namespace Harvester.Race
             public int width,height,frames,minAlive,maxAlive,fourAliveFrames;
             public double capturedSeconds,wallSeconds;
             public float renderScale;
-            public bool mirrorRequested,frameTimingAvailable;
+            public bool mirrorRequested,frameTimingAvailable,debrisCollisionDisabled;
             public List<Metric> metrics=new List<Metric>();
         }
         readonly FrameTiming[] timing=new FrameTiming[1];
@@ -106,7 +106,7 @@ namespace Harvester.Race
             var pipeline=GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
             var summary=new Summary{label=label,gpu=SystemInfo.graphicsDeviceName,api=SystemInfo.graphicsDeviceType.ToString(),quality=QualitySettings.names[QualitySettings.GetQualityLevel()],unity=Application.unityVersion,
                 csv=path,persistentDataPath=Application.persistentDataPath,width=Screen.width,height=Screen.height,frames=samples.Count,capturedSeconds=captured,wallSeconds=Time.realtimeSinceStartupAsDouble-start,
-                renderScale=pipeline!=null?pipeline.renderScale:-1,mirrorRequested=RearViewMirror.UserEnabled,frameTimingAvailable=FrameTimingManager.IsFeatureEnabled(),minAlive=4};
+                renderScale=pipeline!=null?pipeline.renderScale:-1,mirrorRequested=RearViewMirror.UserEnabled,frameTimingAvailable=FrameTimingManager.IsFeatureEnabled(),debrisCollisionDisabled=TestDebrisCollision.Enabled,minAlive=4};
             foreach(var s in samples){summary.minAlive=Math.Min(summary.minAlive,s.alive);summary.maxAlive=Math.Max(summary.maxAlive,s.alive);if(s.alive==4)summary.fourAliveFrames++;}
             Add(summary,"wall_ms",s=>s.wall);Add(summary,"cpu_ms",s=>s.cpu);Add(summary,"cpu_main_ms",s=>s.main);Add(summary,"cpu_render_ms",s=>s.render);Add(summary,"gpu_ms",s=>s.gpu);Add(summary,"present_wait_ms",s=>s.wait);
             Add(summary,"draw_calls",s=>s.draws);Add(summary,"setpass",s=>s.passes);Add(summary,"batches",s=>s.batches);Add(summary,"triangles",s=>s.triangles);Add(summary,"shadow_casters",s=>s.shadows);Add(summary,"gc_bytes",s=>s.gc);

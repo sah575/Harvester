@@ -407,6 +407,7 @@ namespace Harvester.Race
                 piece.SetParent(null, true);
                 if (!AddFittedBox(piece.gameObject)) { Destroy(piece.gameObject); continue; }
                 var rb = piece.gameObject.AddComponent<Rigidbody>();
+                TestDebrisCollision.Configure(rb);
                 rb.mass = 30f;
                 Vector3 away = piece.position - center;
                 away.y = 0f;
@@ -426,6 +427,7 @@ namespace Harvester.Race
             if (AddFittedBox(hull))
             {
                 var hullBody = hull.AddComponent<Rigidbody>();
+                TestDebrisCollision.Configure(hullBody);
                 hullBody.mass = 400f;
                 hullBody.linearVelocity = carVelocity * 0.7f + Vector3.up * lift * 0.35f;
                 hullBody.angularVelocity = Random.insideUnitSphere * 2f;
