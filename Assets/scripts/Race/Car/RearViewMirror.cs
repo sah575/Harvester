@@ -37,6 +37,12 @@ namespace Harvester.Race
         /// <summary>Ölçüm için aynayı oyuncu tercihine dokunmadan kapatır (RearViewMirrorBenchmark).</summary>
         public static bool Suppressed;
 
+        /// <summary>
+        /// Kalite ayarının izni (Optimizasyon bağlar; ör. Düşük kalitede false). Oyuncu tercihinden ayrıdır:
+        /// kalite izin vermezse M tuşu da açamaz. Hızı için örnekteki frameInterval'i değiştirin (Düşük: 4 = ~15 Hz).
+        /// </summary>
+        public static bool QualityAllowed = true;
+
         /// <summary>Oyuncunun tercihi (M tuşu, PlayerPrefs). Varsayılan açık.</summary>
         public static bool UserEnabled
         {
@@ -149,7 +155,7 @@ namespace Harvester.Race
                 ShowToast(on ? "Dikiz aynası açık  <size=70%>(M)</size>" : "Dikiz aynası kapalı  <size=70%>(M)</size>");
             }
 
-            bool want = driving && UserEnabled && !Suppressed && (showInFollowModes || follower.CurrentMode == CarCamera.Mode.Kaput);
+            bool want = driving && UserEnabled && QualityAllowed && !Suppressed && (showInFollowModes || follower.CurrentMode == CarCamera.Mode.Kaput);
             bool toastOn = driving && Time.unscaledTime < toastUntil;
 
             if (!want && !toastOn)
@@ -185,6 +191,16 @@ namespace Harvester.Race
                 if (toast.enabled != showToast) toast.enabled = showToast;
             }
             SetCanvasVisible(mirrorVisible || toastOn);
+        }
+
+        /// <summary>
+        /// Kamera, doku ve arayüzü bir sonraki karede yeniden kurar. postProcessing, pixelResolution, farClip,
+        /// verticalFov, excludedLayers, posterize gibi kurulumda okunan ayarlar değişince çağrılır
+        /// (frameInterval ve görünüm alanları hemen geçerli, çağırmaya gerek yok).
+        /// </summary>
+        public void Rebuild()
+        {
+            Teardown();
         }
 
         private void ShowToast(string text)

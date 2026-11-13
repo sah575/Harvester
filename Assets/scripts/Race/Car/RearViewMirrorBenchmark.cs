@@ -31,19 +31,19 @@ namespace Harvester.Race
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CheckCommandLine()
         {
-            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mirrorBench") >= 0) Run(15f);
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-mirrorBench") >= 0) Run(15f, true);
         }
 
-        /// <summary>Ölçümü başlatır. delay: yerel arabanın sürülmeye başlamasını beklemek için en az süre (sn).</summary>
-        public static void Run(float delay = 0f)
+        /// <summary>Ölçümü başlatır. fullMatrix: renderScale 0.5/1 ve ayna post-processing açık/kapalı bütün birleşimleri. delay: yerel arabanın sürülmeye başlamasını beklemek için en az süre (sn).</summary>
+        public static void Run(float delay = 0f, bool fullMatrix = false)
         {
             if (Running) return;
             var go = new GameObject("RearViewMirrorBenchmark");
             DontDestroyOnLoad(go);
-            go.AddComponent<RearViewMirrorBenchmark>().StartCoroutine(go.GetComponent<RearViewMirrorBenchmark>().Measure(delay));
+            go.AddComponent<RearViewMirrorBenchmark>().StartCoroutine(go.GetComponent<RearViewMirrorBenchmark>().Measure(delay, fullMatrix));
         }
 
-        private IEnumerator Measure(float delay)
+        private IEnumerator Measure(float delay, bool fullMatrix)
         {
             Running = true;
             float start = Time.realtimeSinceStartup;
@@ -66,16 +66,36 @@ namespace Harvester.Race
                       + ", arabalar: " + RaceCar.All.Count + ", ekran: " + Screen.width + "x" + Screen.height
                       + ", kamera modu: " + (CarCamera.Current != null ? CarCamera.Current.CurrentMode.ToString() : "-"));
 
+            var asset = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline as UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset;
+            float oldScale = asset != null ? asset.renderScale : 1f;
+            bool oldPost = mirror.postProcessing;
+            float[] scales = fullMatrix && asset != null ? new[] { 0.5f, 1f } : new[] { oldScale };
+            bool[] posts = fullMatrix ? new[] { true, false } : new[] { oldPost };
+
             string[] names = { "aynasiz", "her 2 karede", "her karede", "aynasiz (tekrar)" };
             int[] intervals = { 0, 2, 1, 0 };
-            for (int i = 0; i < names.Length; i++)
+            foreach (float scale in scales)
             {
-                RearViewMirror.Suppressed = intervals[i] == 0;
-                if (intervals[i] > 0) mirror.frameInterval = intervals[i];
-                var stats = new Stats();
-                yield return Sample(mirror, stats, s => stats = s);
-                Report(names[i], stats);
+                if (asset != null) asset.renderScale = scale;
+                foreach (bool post in posts)
+                {
+                    mirror.postProcessing = post;
+                    mirror.Rebuild();
+                    string setup = "renderScale " + (asset != null ? asset.renderScale : 1f).ToString("0.##") + ", post " + (post ? "açık" : "kapalı") + ", ";
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        RearViewMirror.Suppressed = intervals[i] == 0;
+                        if (intervals[i] > 0) mirror.frameInterval = intervals[i];
+                        var stats = new Stats();
+                        yield return Sample(mirror, stats, s => stats = s);
+                        Report(setup + names[i], stats);
+                    }
+                }
             }
+            // renderScale editörde asset'e yazılır: eski değere dön
+            if (asset != null) asset.renderScale = oldScale;
+            mirror.postProcessing = oldPost;
+            mirror.Rebuild();
 
             mirror.frameInterval = oldInterval;
             RearViewMirror.UserEnabled = oldUser;
@@ -91,8 +111,9 @@ namespace Harvester.Race
             var setPass = ProfilerRecorder.StartNew(ProfilerCategory.Render, "SetPass Calls Count");
             var batches = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Batches Count");
             var gc = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame");
-            var mirrorCpu = ProfilerRecorder.StartNew(ProfilerCategory.Render, marker);
-            var mirrorGpu = ProfilerRecorder.StartNew(ProfilerCategory.Render, marker, 1, ProfilerRecorderOptions.GpuRecorder);
+            var mirrorCpu = ProfilerRecorder.StartNew(ProfilerCategory.Render, marker, 1, ProfilerRecorderOptions.Default | ProfilerRecorderOptions.SumAllSamplesInFrame);
+            // İşaretçi kayıtçıları SumAllSamplesInFrame ister
+            var mirrorGpu = ProfilerRecorder.StartNew(ProfilerCategory.Render, marker, 1, ProfilerRecorderOptions.SumAllSamplesInFrame | ProfilerRecorderOptions.GpuRecorder);
             var timings = new FrameTiming[1];
 
             for (int i = 0; i < WarmupFrames; i++) yield return null;
