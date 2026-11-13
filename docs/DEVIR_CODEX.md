@@ -133,6 +133,7 @@ __GLX_VENDOR_LIBRARY_NAME=nvidia`. Frame Timing Stats açık.
   - Uzak arabada gölge ve tekerlek animasyonunu kapat.
   - Garaj önizlemesi (`GaragePreview`) MPB'ye güveniyorsa uyarla.
 - **P7, enkaz ve object pooling:**
+  - **Güncel kullanıcı talimatı:** Önceki collider isteği karşılanmadı. Kullanıcı şimdilik enkaz/collider konusuna dokunulmamasını istedi; aşağıdaki enkaz kısmı beklemede, genel havuz altyapısı yapılabilir.
   - Parçalanma enkazı için "Enkaz" katmanı (sadece zemin ve bariyerle çarpışır), uyutma ve süre sonunda
     temizleme.
   - Genel havuz sistemi: `Assets/scripts/Race/Pooling/`: `Pool.Spawn/Release/Prewarm`, `IPoolable`,

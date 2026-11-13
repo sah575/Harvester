@@ -14,6 +14,8 @@ Dal: `yaris-entegrasyon`. Main'e merge edilmedi. Önce bu belgeyi, ardından `DE
 
 ## Kullanıcının son isteği: GEÇİCİ çarpışmasız enkaz testi
 
+**KULLANICI DÜZELTMESİ: Kullanıcının isteğini yerine getiremedim; enkaz/collider konusu çözülmedi.** Kullanıcı oyunda denedi ve yaptığım değişikliğin istediği sonucu sağlamadığını bildirdi. Aşağıda anlatılan teknik uygulama ve bileşen testleri, kullanıcının istediği oyun davranışının sağlandığını kanıtlamaz. Kullanıcı açıkça “şimdilik bununla uğraşma” dedi. Bu konuyu yeniden çözmeye çalışma; P7'nin enkaz fiziği/katman/uyutma değişiklikleri de bekleyecek. Genel havuz altyapısı ve diğer optimizasyonlar ayrı devam edebilir. Test seçeneği kodda duruyor, nihai veya kullanıcı tarafından kabul edilmiş çözüm değildir.
+
 Kullanıcı P3 sonrasında biçilen araçların collider'larının test amacıyla kapatılmasını istedi. Gerekçe: enkaz nedeniyle tekrarlayan kazalar aynı döngüye sokuyor; sürüş testini daha uzun tutmak istiyor. **Bu nihai oyun kuralı değil. Enkaz/çarpışma tasarımına daha sonra kullanıcıyla karar verilecek. Kalıcı çözüm diye yorumlama.**
 
 Ana RaceCar collider'ları elenince zaten kapanıyordu. Açık kalanlar CarVisual.Shatter'ın kopan parçalar ve kasaya, ayrıca eski model parçalanma yolunun sonradan eklediği collider'lardı. Yeni `TestDebrisCollision.Configure` yalnız bu enkaz gövdelerinde collider.enabled=false ve Rigidbody.detectCollisions=false uygular. Görsel parçalanma, yerçekimi ve mevcut temizlenme süresi kalır; parçalar zeminden de geçebilir. Canlı araçların collider'ları değişmez.
