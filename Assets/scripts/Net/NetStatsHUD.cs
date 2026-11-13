@@ -48,6 +48,9 @@ namespace Harvester.Net
         float kbIn, kbOut;
 
         GUIStyle style;
+        readonly System.Text.StringBuilder lines = new System.Text.StringBuilder(512);
+        string displayText="", shadowText="";
+        float nextTextUpdate;
 
         void Awake()
         {
@@ -78,7 +81,7 @@ namespace Harvester.Net
             if (connected && registeredOn != nm.CustomMessagingManager) Register();
             else if (!connected && registeredOn != null) Unregister();
 
-            if (Input.GetKeyDown(KeyCode.F3)) showDetails = !showDetails;
+            if (Input.GetKeyDown(KeyCode.F3)) { showDetails = !showDetails; nextTextUpdate=0; }
             if (Debug.isDebugBuild && Input.GetKeyDown(KeyCode.F4)) CycleSimPreset();
             if (Debug.isDebugBuild && Input.GetKeyDown(KeyCode.F5)) RemoteExtrapolator.Enabled = !RemoteExtrapolator.Enabled;
 
@@ -94,6 +97,7 @@ namespace Harvester.Net
             {
                 SampleRates(now);
             }
+            if (now >= nextTextUpdate) { nextTextUpdate=now+.25f; RefreshText(); }
         }
 
         // ------------------------------------------------------------ ping
@@ -105,7 +109,7 @@ namespace Harvester.Net
             registeredOn.RegisterNamedMessageHandler(PongMessage, OnPong);
             LocalRtt = 0f;
             clientRtts.Clear();
-            nextPing = 0f;
+            nextPing = 0f; nextTextUpdate=0;
         }
 
         void Unregister()
@@ -189,18 +193,10 @@ namespace Harvester.Net
             relay.SimLossPercent = p.loss;
         }
 
-        void OnGUI()
+        // Ağ ölçümü/girdi aynı sıklıkta kalır; yalnız gösterge metni dört kez/sn yenilenir.
+        void RefreshText()
         {
-            if (registeredOn == null) return;
-
-            float scale = Screen.height / 1080f;
-            if (style == null)
-            {
-                style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.LowerRight, richText = true };
-            }
-            style.fontSize = Mathf.RoundToInt(22 * scale);
-
-            var lines = new System.Text.StringBuilder();
+            lines.Length=0;
             if (nm.IsServer)
             {
                 lines.Append("<color=#C9A227>Host</color>");
@@ -244,17 +240,30 @@ namespace Harvester.Net
                 lines.Append("</color>");
             }
 
+            displayText=lines.ToString(); shadowText=StripColors(displayText);
+        }
+
+        void OnGUI()
+        {
+            if (registeredOn == null || Event.current.type != EventType.Repaint) return;
+
+            float scale = Screen.height / 1080f;
+            if (style == null)
+            {
+                style = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.LowerRight, richText = true };
+            }
+            style.fontSize = Mathf.RoundToInt(22 * scale);
+
             // Sağ alt köşe: üstteki oyun göstergeleriyle (robot sayısı) çakışmasın. Development build yazısının üstünde.
             float width = 520 * scale, height = 400 * scale;
             var rect = new Rect(Screen.width - width - 16 * scale, Screen.height - height - 40 * scale, width, height);
             // Okunur olsun diye hafif gölge
             var shadow = new Rect(rect.x + 2, rect.y + 2, rect.width, rect.height);
-            string text = lines.ToString();
             var color = GUI.color;
             GUI.color = new Color(0, 0, 0, 0.8f);
-            GUI.Label(shadow, StripColors(text), style);
+            GUI.Label(shadow, shadowText, style);
             GUI.color = color;
-            GUI.Label(rect, text, style);
+            GUI.Label(rect, displayText, style);
         }
 
         static string FormatRtt(float rtt)

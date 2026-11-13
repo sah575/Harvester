@@ -16,5 +16,6 @@
 | [p5-intel](sonuclar/p5-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.89 | desteklenmiyor | 16.80 | 135.00 | 28049.00 | 8202.00 / 19802.00 | 93.8 |
 | [p5-final-intel](sonuclar/p5-final-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.83 | desteklenmiyor | 16.80 | 135.00 | 28049.00 | 8202.00 / 19776.00 | 93.8 |
 | [p6-intel](sonuclar/p6-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.43 | desteklenmiyor | 16.76 | 123.00 | 28049.00 | 8202.00 / 19822.00 | 94.3 |
+| [p8-intel](sonuclar/p8-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.22 | desteklenmiyor | 16.76 | 123.00 | 28049.00 | 2692.00 / 14510.00 | 93.3 |
 
 Yüzdelikler sıralanmış kare örneklerinde nearest-rank yöntemiyle hesaplanır. FrameTimingManager desteklenmezse CPU ana/render için ProfilerRecorder işaretçisi kullanılır; geçersiz ölçüm -1 ve sıfır geçerli örnekle raporlanır. GPU ölçümü CPU süresinden türetilmez. Ham CSV ve tam player günlükleri Builds/reports/<etiket>/ altında git dışındadır. Başka GPU, API, kalite, ölçek veya yaşayan araç dağılımı olan koşular birebir eşdeğer kabul edilmemelidir.

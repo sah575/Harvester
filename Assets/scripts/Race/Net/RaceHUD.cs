@@ -17,7 +17,10 @@ namespace Harvester.Race
         [Tooltip("Elendikten kaç saniye sonra izleyici kamerasına geçilsin")]
         [SerializeField] private float spectateDelay = 2f;
 
-        private GUIStyle label, big, center, table;
+        private GUIStyle label, big, center, table, centeredTable, resultsTitle;
+        private string cachedStats, cachedSpeed, cachedHarvester;
+        private int statsPosition=-1, statsTotal=-1, statsLap=-1, statsLaps=-1, statsTenth=-1;
+        private int cachedKmh=int.MinValue, cachedDistance=int.MinValue;
         private float scale = 1f;
         private float eliminatedAt = -1f;
         private bool spectating;
@@ -54,6 +57,8 @@ namespace Harvester.Race
             big = new GUIStyle(label) { fontSize = Mathf.RoundToInt(140 * s), alignment = TextAnchor.MiddleCenter };
             center = new GUIStyle(label) { fontSize = Mathf.RoundToInt(52 * s), alignment = TextAnchor.MiddleCenter };
             table = new GUIStyle(label) { fontSize = Mathf.RoundToInt(28 * s), fontStyle = FontStyle.Normal };
+            centeredTable = new GUIStyle(table) { alignment = TextAnchor.MiddleCenter };
+            resultsTitle = new GUIStyle(center) { fontSize = Mathf.RoundToInt(36 * s) };
         }
 
         private static void Shadowed(Rect r, string text, GUIStyle style)
@@ -67,6 +72,7 @@ namespace Harvester.Race
 
         private static string StripColor(string text)
         {
+            if (text.IndexOf("<color", System.StringComparison.Ordinal) < 0) return text;
             return System.Text.RegularExpressions.Regex.Replace(text, "<color=[^>]*>|</color>", "");
         }
 
@@ -78,6 +84,8 @@ namespace Harvester.Race
 
         private void OnGUI()
         {
+            // Gösterge yalnız sabit Rect/Label çizer; Layout/girdi olaylarında metin üretmeye gerek yok.
+            if (Event.current.type != EventType.Repaint) return;
             var manager = RaceManager.Instance;
             if (manager == null) return;
             EnsureStyles();
@@ -92,18 +100,25 @@ namespace Harvester.Race
             // Sol üst: sıra, tur, süre
             if (hasMe && phase != RacePhase.Waiting)
             {
-                sb.Length = 0;
-                sb.Append("SIRA ").Append(me.Position).Append('/').Append(total).Append('\n');
-                if (manager.LoopTrack) sb.Append("TUR ").Append(me.Lap).Append('/').Append(manager.Laps).Append('\n');
-                sb.Append("SÜRE ").Append(FormatTime(me.Status == RacerStatus.Racing ? manager.RaceTime : me.Time));
-                Shadowed(new Rect(24 * s, 18 * s, 500 * s, 160 * s), sb.ToString(), label);
+                float time = me.Status == RacerStatus.Racing ? manager.RaceTime : me.Time;
+                int tenth = Mathf.RoundToInt(time * 10f);
+                if (statsPosition != me.Position || statsTotal != total || statsLap != me.Lap || statsLaps != manager.Laps || statsTenth != tenth)
+                {
+                    statsPosition=me.Position; statsTotal=total; statsLap=me.Lap; statsLaps=manager.Laps; statsTenth=tenth;
+                    sb.Length=0;
+                    sb.Append("SIRA ").Append(me.Position).Append('/').Append(total).Append('\n');
+                    if (manager.LoopTrack) sb.Append("TUR ").Append(me.Lap).Append('/').Append(manager.Laps).Append('\n');
+                    sb.Append("SÜRE ").Append(FormatTime(time)); cachedStats=sb.ToString();
+                }
+                Shadowed(new Rect(24 * s, 18 * s, 500 * s, 160 * s), cachedStats, label);
             }
 
             // Sol alt: hız
             if (car != null && !car.IsEliminated)
             {
                 int kmh = Mathf.RoundToInt(Mathf.Abs(car.ForwardSpeed) * 3.6f);
-                Shadowed(new Rect(24 * s, h - 70 * s, 400 * s, 60 * s), kmh + " km/sa", label);
+                if (kmh != cachedKmh) { cachedKmh=kmh; cachedSpeed=kmh+" km/sa"; }
+                Shadowed(new Rect(24 * s, h - 70 * s, 400 * s, 60 * s), cachedSpeed, label);
             }
 
             // Geri sayım
@@ -129,8 +144,13 @@ namespace Harvester.Race
                     Color c = Color.Lerp(new Color(1f, 0.85f, 0.2f), new Color(1f, 0.1f, 0.1f), t);
                     bool blink = t > 0.7f && Mathf.Repeat(Time.time * 4f, 1f) < 0.35f;
                     if (!blink)
-                        Shadowed(new Rect(0, 20 * s, w, 70 * s),
-                            "<color=#" + ColorUtility.ToHtmlStringRGB(c) + ">HARVESTER " + Mathf.RoundToInt(distance) + " m!</color>", center);
+                    {
+                        int meters=Mathf.RoundToInt(distance);
+                        if (meters != cachedDistance) { cachedDistance=meters; cachedHarvester="HARVESTER "+meters+" m!"; }
+                        Color oldColor=center.normal.textColor; center.normal.textColor=c;
+                        Shadowed(new Rect(0, 20 * s, w, 70 * s), cachedHarvester, center);
+                        center.normal.textColor=oldColor;
+                    }
                 }
             }
 
@@ -140,7 +160,7 @@ namespace Harvester.Race
                 if (me.Status == RacerStatus.Eliminated || (car != null && car.IsEliminated))
                 {
                     Shadowed(new Rect(0, h * 0.35f, w, 90 * s), "<color=#FF3030>ELENDİN</color>", center);
-                    if (spectating) Shadowed(new Rect(0, h * 0.35f + 80 * s, w, 50 * s), "Harvester'ı izliyorsun", new GUIStyle(table) { alignment = TextAnchor.MiddleCenter });
+                    if (spectating) Shadowed(new Rect(0, h * 0.35f + 80 * s, w, 50 * s), "Harvester'ı izliyorsun", centeredTable);
                 }
                 else if (me.Status == RacerStatus.Finished)
                 {
@@ -162,7 +182,7 @@ namespace Harvester.Race
             GUI.DrawTexture(box, Texture2D.whiteTexture);
             GUI.color = old;
 
-            GUI.Label(new Rect(box.x, box.y + 6 * s, box.width, rowH), "SONUÇLAR", new GUIStyle(center) { fontSize = Mathf.RoundToInt(36 * s) });
+            GUI.Label(new Rect(box.x, box.y + 6 * s, box.width, rowH), "SONUÇLAR", resultsTitle);
             ulong localId = Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsListening
                 ? Unity.Netcode.NetworkManager.Singleton.LocalClientId : 0;
             for (int i = 0; i < rows; i++)
@@ -185,7 +205,7 @@ namespace Harvester.Race
             }
             if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsListening)
                 GUI.Label(new Rect(box.x, box.yMax - rowH * 1.2f, box.width, rowH),
-                    "Lobiye dönülüyor: " + Mathf.CeilToInt(manager.PhaseRemaining), new GUIStyle(table) { alignment = TextAnchor.MiddleCenter });
+                    "Lobiye dönülüyor: " + Mathf.CeilToInt(manager.PhaseRemaining), centeredTable);
         }
     }
 }
