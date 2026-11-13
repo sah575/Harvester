@@ -9,10 +9,10 @@ namespace Harvester.Race
     /// kendi başına RaceCar'ın çocuğu olarak açar. RaceCar seçim değişince Build/Apply çağırır.
     ///
     /// - Parça varyantlarını açıp kapatır (tanımdaki CarModSlot listesi).
-    /// - Renkleri MaterialPropertyBlock ile verir (_BaseColor, parlayanlarda _EmissionColor); malzeme kopyalanmaz.
+    /// - Renkleri araba başına önbellekli malzemelerle verir; ortak asset değişmez, SRP Batcher korunur.
     /// - light_head_* noktalarına spot far koyar; stoplar yalnız emisyonla frende parlar.
     /// - Tekerlek başına bir "göbek" oluşturur: göbek direksiyonla döner ve kaliperi taşır, tekerlek (jantıyla) göbeğin içinde yuvarlanır.
-    /// - İsteğe bağlı: tekerlekler dışındaki bütün parçaları malzemeye göre tek mesh'te birleştirir (draw call azalır).
+    /// - Gövdeyi ve her yuvarlanan tekerleği ayrı birleşik mesh yapar; malzeme yuvaları korunur.
     ///   Parçalanmada birleşik mesh silinip asıl parçalar geri açılır.
     /// </summary>
     [DisallowMultipleComponent]
@@ -22,7 +22,7 @@ namespace Harvester.Race
         static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
 
         [Header("Optimizasyon")]
-        [Tooltip("Tekerlekler dışındaki parçaları malzemeye göre birleştir (draw call azalır). Model mesh'leri okunabilir (Read/Write) olmalı.")]
+        [Tooltip("Gövde ve tekerlek parçalarını birleştir. Model mesh'leri okunabilir (Read/Write) olmalı.")]
         [SerializeField] private bool combineStaticMeshes = true;
 
         [Header("Farlar (light_head_*)")]
@@ -50,27 +50,31 @@ namespace Harvester.Race
         public Transform[] Wheels { get; } = new Transform[4];
         /// <summary>Direksiyonla dönen göbekler; konumu süspansiyon belirler.</summary>
         public Transform[] Hubs { get; } = new Transform[4];
-        public bool IsCombined => combinedObject != null;
+        public bool IsCombined => combinedObjects.Count > 0;
+        public bool AnimateWheels { get; private set; } = true;
 
         private RaceCar car;
         private readonly Dictionary<string, Transform> parts = new Dictionary<string, Transform>();
         private readonly List<Light> headLights = new List<Light>();
         private float nextLightBudget;
         private readonly List<Renderer> combinedSources = new List<Renderer>();
-        private GameObject combinedObject;
-        private Mesh combinedMesh;
-        private MaterialPropertyBlock block;
+        private readonly List<GameObject> combinedObjects = new List<GameObject>();
+        private readonly List<Mesh> combinedMeshes = new List<Mesh>();
+        private readonly Dictionary<Material, Material> materialCopies = new Dictionary<Material, Material>();
+        private readonly Dictionary<Material, Material> originalMaterials = new Dictionary<Material, Material>();
+        private Renderer[] modelRenderers;
+        private ShadowCastingMode[] originalShadowModes;
+        private bool geometryApplied, shadowStateKnown, distantShadows;
         private CarLoadout appliedLoadout;
         private bool braking;
         private float lastSpeed;
         private float smoothedDecel;
         private static bool warnedUnreadable;
 
-        // Boyama hedefleri: (renderer, malzeme sırası) -> boya yuvası ya da stop lambası
+        // Her araba boyasının tek malzeme kopyası -> boya yuvası ya da stop lambası.
         private struct PaintTarget
         {
-            public Renderer renderer;
-            public int materialIndex;
+            public Material material;
             public int paint;       // -1 = boya değil
             public bool brakeLight;
         }
@@ -88,7 +92,6 @@ namespace Harvester.Race
             if (Model != null && Definition == def) return true;
             Clear();
             Definition = def;
-            if (block == null) block = new MaterialPropertyBlock();
 
             Model = Instantiate(def.modelPrefab, transform, false);
             Model.name = "Model";
@@ -112,6 +115,10 @@ namespace Harvester.Race
         {
             var def = Definition;
             if (def == null || Model == null) return;
+            bool same = geometryApplied;
+            for (int s = 0; same && s < def.slots.Count && s < CarLoadout.MaxSlots; s++)
+                if (appliedLoadout.GetSlot(s) != loadout.GetSlot(s)) same = false;
+            if (same) { appliedLoadout = loadout; ApplyColors(); return; }
             Uncombine();
             appliedLoadout = loadout;
 
@@ -132,10 +139,19 @@ namespace Harvester.Race
                 }
             }
 
-            if (combineStaticMeshes) Combine();
+            if (combineStaticMeshes)
+            {
+                CombineAt(Model.transform, true);
+                for (int i = 0; i < Wheels.Length; i++) if (Wheels[i] != null) CombineAt(Wheels[i], false);
+            }
             CollectTargets();
             ApplyColors();
             VisibilityBudget.MarkCarDetails(Model);
+            geometryApplied = true;
+            modelRenderers = Model.GetComponentsInChildren<Renderer>(true);
+            originalShadowModes = new ShadowCastingMode[modelRenderers.Length];
+            for (int i = 0; i < modelRenderers.Length; i++) originalShadowModes[i] = modelRenderers[i].shadowCastingMode;
+            shadowStateKnown = false;
         }
 
         // ------------------------------------------------------------------ Model parçaları
@@ -199,7 +215,16 @@ namespace Harvester.Race
             nextLightBudget = Time.unscaledTime + .2f;
             var observer = CarCamera.Current;
             bool local = car == RaceCar.Local || observer == null;
-            float factor = HeadlightFactor(local ? 0 : Vector3.Distance(transform.position, observer.transform.position), local);
+            float distance = local ? 0 : Vector3.Distance(transform.position, observer.transform.position);
+            float factor = HeadlightFactor(distance, local);
+            AnimateWheels = local || distance < 80f;
+            bool far = !local && distance > 80f;
+            if (modelRenderers != null && (!shadowStateKnown || distantShadows != far))
+            {
+                for (int i = 0; i < modelRenderers.Length; i++) if (modelRenderers[i] != null)
+                    modelRenderers[i].shadowCastingMode = far ? ShadowCastingMode.Off : originalShadowModes[i];
+                distantShadows = far; shadowStateKnown = true;
+            }
             foreach (var light in headLights) if (light != null)
             { light.intensity = headlightIntensity * factor; light.enabled = factor > .001f; }
         }
@@ -213,51 +238,61 @@ namespace Harvester.Race
 
         // ------------------------------------------------------------------ Renk
 
+        private Material Original(Material material)
+        {
+            Material original;
+            return material != null && originalMaterials.TryGetValue(material, out original) ? original : material;
+        }
+        private Material Copy(Material original)
+        {
+            Material copy;
+            if (!materialCopies.TryGetValue(original, out copy))
+            {
+                copy = new Material(original) { name = original.name + " (araç boyası)" };
+                materialCopies.Add(original, copy); originalMaterials.Add(copy, original);
+            }
+            return copy;
+        }
         private void CollectTargets()
         {
-            targets.Clear();
-            var def = Definition;
+            targets.Clear(); var seen = new HashSet<Material>(); var def = Definition;
             foreach (var r in Model.GetComponentsInChildren<Renderer>(true))
             {
-                if (r.GetComponent<Light>() != null) continue;
-                var mats = r.sharedMaterials;
+                var mats = r.sharedMaterials; bool changed = false;
                 for (int m = 0; m < mats.Length; m++)
                 {
-                    var mat = mats[m];
-                    if (mat == null) continue;
+                    var original = Original(mats[m]); if (original == null) continue;
                     int paint = -1;
-                    for (int p = 0; p < def.paints.Count; p++)
-                        if (def.paints[p].material == mat) { paint = p; break; }
-                    bool brake = def.brakeLightMaterial != null && mat == def.brakeLightMaterial;
-                    if (paint >= 0 || brake)
-                        targets.Add(new PaintTarget { renderer = r, materialIndex = m, paint = paint, brakeLight = brake });
+                    for (int p = 0; p < def.paints.Count; p++) if (def.paints[p].material == original) { paint = p; break; }
+                    bool brake = original == def.brakeLightMaterial;
+                    if (paint < 0 && !brake) continue;
+                    var copy = Copy(original); mats[m] = copy; changed = true;
+                    // Önceki MPB'yi temizle; artık shader verisi malzeme sabit tamponunda tutulur.
+                    r.SetPropertyBlock(null, m);
+                    if (seen.Add(copy)) targets.Add(new PaintTarget { material = copy, paint = paint, brakeLight = brake });
                 }
+                if (changed) r.sharedMaterials = mats;
             }
         }
-
         private void ApplyColors()
         {
             var def = Definition;
-            for (int i = 0; i < targets.Count; i++)
+            foreach (var t in targets)
             {
-                var t = targets[i];
-                if (t.renderer == null) continue;
-                block.Clear();
+                if (t.material == null) continue;
                 if (t.paint >= 0)
                 {
                     var slot = def.paints[t.paint];
-                    Color32 c32 = t.paint < CarLoadout.MaxPaints ? appliedLoadout.GetPaint(t.paint) : new Color32(0, 0, 0, 0);
+                    Color32 c32 = t.paint < CarLoadout.MaxPaints ? appliedLoadout.GetPaint(t.paint) : new Color32(0,0,0,0);
                     Color c = c32.a == 0 ? slot.defaultColor : (Color)c32;
-                    block.SetColor(BaseColorId, c);
-                    if (slot.emissionIntensity > 0f)
-                        block.SetColor(EmissionColorId, new Color(c.r, c.g, c.b, 1f) * slot.emissionIntensity);
+                    t.material.SetColor(BaseColorId, c);
+                    if (slot.emissionIntensity > 0f) t.material.SetColor(EmissionColorId, new Color(c.r,c.g,c.b,1f) * slot.emissionIntensity);
                 }
                 else if (t.brakeLight)
                 {
                     Color e = def.brakeLightMaterial.HasProperty(EmissionColorId) ? def.brakeLightMaterial.GetColor(EmissionColorId) : Color.red;
-                    block.SetColor(EmissionColorId, braking ? e * brakeEmissionBoost : e);
+                    t.material.SetColor(EmissionColorId, braking ? e * brakeEmissionBoost : e);
                 }
-                t.renderer.SetPropertyBlock(block, t.materialIndex);
             }
         }
 
@@ -283,27 +318,21 @@ namespace Harvester.Race
             var def = Definition;
             if (def == null || def.brakeLightMaterial == null) return;
             Color e = def.brakeLightMaterial.HasProperty(EmissionColorId) ? def.brakeLightMaterial.GetColor(EmissionColorId) : Color.red;
-            for (int i = 0; i < targets.Count; i++)
-            {
-                var t = targets[i];
-                if (!t.brakeLight || t.renderer == null) continue;
-                block.Clear();
-                block.SetColor(EmissionColorId, braking ? e * brakeEmissionBoost : e);
-                t.renderer.SetPropertyBlock(block, t.materialIndex);
-            }
+            foreach (var t in targets) if (t.brakeLight && t.material != null)
+                t.material.SetColor(EmissionColorId, braking ? e * brakeEmissionBoost : e);
         }
 
         // ------------------------------------------------------------------ Birleştirme
 
-        private void Combine()
+        private void CombineAt(Transform root, bool body)
         {
             var groups = new Dictionary<Material, List<CombineInstance>>();
             var order = new List<Material>();
-            Matrix4x4 toModel = Model.transform.worldToLocalMatrix;
-            combinedSources.Clear();
-            foreach (var r in Model.GetComponentsInChildren<MeshRenderer>(false))
+            Matrix4x4 toModel = root.worldToLocalMatrix;
+            var sources = new List<Renderer>();
+            foreach (var r in root.GetComponentsInChildren<MeshRenderer>(false))
             {
-                if (!r.enabled || IsUnderHub(r.transform)) continue;
+                if (!r.enabled || (body && IsUnderHub(r.transform))) continue;
                 var mf = r.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null) continue;
                 var mesh = mf.sharedMesh;
@@ -312,7 +341,6 @@ namespace Harvester.Race
                     if (!warnedUnreadable)
                         Debug.LogWarning("[Araba] " + Definition.name + ": model mesh'leri okunabilir değil (Read/Write kapalı), birleştirme yapılmadı. CarBuilder bunu açar.");
                     warnedUnreadable = true;
-                    combinedSources.Clear();
                     return;
                 }
                 var mats = r.sharedMaterials;
@@ -320,6 +348,7 @@ namespace Harvester.Race
                 for (int s = 0; s < mesh.subMeshCount; s++)
                 {
                     Material mat = mats.Length > 0 ? mats[Mathf.Min(s, mats.Length - 1)] : null;
+                    mat = Original(mat);
                     if (mat == null) continue;
                     List<CombineInstance> list;
                     if (!groups.TryGetValue(mat, out list))
@@ -330,13 +359,9 @@ namespace Harvester.Race
                     }
                     list.Add(new CombineInstance { mesh = mesh, subMeshIndex = s, transform = m });
                 }
-                combinedSources.Add(r);
+                sources.Add(r);
             }
-            if (combinedSources.Count < 2)
-            {
-                combinedSources.Clear();
-                return;
-            }
+            if (sources.Count < 2) return;
 
             var finals = new CombineInstance[order.Count];
             int vertexCount = 0;
@@ -348,27 +373,31 @@ namespace Harvester.Race
                 vertexCount += part.vertexCount;
                 finals[i] = new CombineInstance { mesh = part, transform = Matrix4x4.identity };
             }
-            combinedMesh = new Mesh { name = Definition.name + "_birlesik" };
+            var combinedMesh = new Mesh { name = Definition.name + "_birlesik" };
             combinedMesh.indexFormat = vertexCount > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16;
             combinedMesh.CombineMeshes(finals, false, false);
             for (int i = 0; i < finals.Length; i++) Destroy(finals[i].mesh);
 
-            combinedObject = new GameObject("Birlesik");
-            combinedObject.transform.SetParent(Model.transform, false);
+            var combinedObject = new GameObject(body ? "Birlesik" : "TekerlekBirlesik");
+            combinedObject.transform.SetParent(root, false);
             combinedObject.AddComponent<MeshFilter>().sharedMesh = combinedMesh;
             var renderer = combinedObject.AddComponent<MeshRenderer>();
             renderer.sharedMaterials = order.ToArray();
             renderer.shadowCastingMode = ShadowCastingMode.On;
             renderer.receiveShadows = true;
-            foreach (var r in combinedSources) r.enabled = false;
+            foreach (var r in sources) r.enabled = false;
+            combinedObjects.Add(combinedObject); combinedMeshes.Add(combinedMesh); combinedSources.AddRange(sources);
         }
 
         private void Uncombine()
         {
-            if (combinedObject != null) Destroy(combinedObject);
-            if (combinedMesh != null) Destroy(combinedMesh);
-            combinedObject = null;
-            combinedMesh = null;
+            if (modelRenderers != null && originalShadowModes != null)
+                for (int i = 0; i < modelRenderers.Length; i++) if (modelRenderers[i] != null)
+                    modelRenderers[i].shadowCastingMode = originalShadowModes[i];
+            // Destroy kare sonunda tamamlanır; eski mesh yeni birleştirmeye tekrar katılmasın.
+            foreach (var go in combinedObjects) if (go != null) { go.SetActive(false); Destroy(go); }
+            foreach (var mesh in combinedMeshes) if (mesh != null) Destroy(mesh);
+            combinedObjects.Clear(); combinedMeshes.Clear();
             foreach (var r in combinedSources) if (r != null) r.enabled = true;
             combinedSources.Clear();
         }
@@ -416,6 +445,13 @@ namespace Harvester.Race
 
             // Kalan kasa: yavaşça savrulur
             var hull = Model;
+            // Boya kaynakları görsel parçalar kadar yaşar; araba despawn olsa da pembeleşmezler.
+            if (materialCopies.Count > 0)
+            {
+                var lease = hull.AddComponent<VisualMaterialLease>();
+                lease.materials = new Material[materialCopies.Count];materialCopies.Values.CopyTo(lease.materials, 0);
+                materialCopies.Clear(); originalMaterials.Clear();
+            }
             hull.transform.SetParent(null, true);
             hull.name = "Kasa_enkaz";
             if (AddFittedBox(hull))
@@ -472,6 +508,9 @@ namespace Harvester.Race
             if (Model != null) Destroy(Model);
             Model = null;
             Definition = null;
+            geometryApplied = false; modelRenderers = null; originalShadowModes = null;
+            foreach (var material in materialCopies.Values) if (material != null) Destroy(material);
+            materialCopies.Clear(); originalMaterials.Clear();
             CockpitAnchor = null;
             for (int i = 0; i < 4; i++) Wheels[i] = Hubs[i] = null;
             parts.Clear();
@@ -481,7 +520,8 @@ namespace Harvester.Race
 
         private void OnDestroy()
         {
-            if (combinedMesh != null) Destroy(combinedMesh);
+            foreach (var mesh in combinedMeshes) if (mesh != null) Destroy(mesh);
+            foreach (var material in materialCopies.Values) if (material != null) Destroy(material);
         }
     }
 }

@@ -786,6 +786,7 @@ namespace Harvester.Race
             lastVisualPosition = transform.position;
 
             if (IsEliminated) return;
+            if (visual != null && !visual.AnimateWheels) return; // yalnız uzak tekerlek görseli; hız tahmini yukarıda korunur
             Vector3 up = transform.up;
             float restLength = suspensionUp + suspensionDroop;
             for (int i = 0; i < wheelVisuals.Length && i < 4; i++)

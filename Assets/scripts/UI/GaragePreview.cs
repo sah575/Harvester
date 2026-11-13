@@ -118,8 +118,6 @@ namespace Harvester.UI
         public void Show(CarDefinition definition,CarLoadout loadout)
         {
             if(visual==null)return;visual.Build(definition);
-            // Destroy kare sonunda tamamlanır; eski birleşik gövde yeniden birleştirmeye katılmasın.
-            if(visual.Model!=null)foreach(Transform child in visual.Model.transform)if(child.name=="Birlesik")child.gameObject.SetActive(false);
             visual.Apply(loadout);SetLayers();
         }
         public void Overview()
