@@ -17,8 +17,13 @@ out=root/'Builds'/'reports'/a.label;out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy()
 for key in ['__NV_PRIME_RENDER_OFFLOAD','__GLX_VENDOR_LIBRARY_NAME','__VK_LAYER_NV_optimus']:env.pop(key,None)
 if a.gpu=='nvidia':env.update(__NV_PRIME_RENDER_OFFLOAD='1',__GLX_VENDOR_LIBRARY_NAME='nvidia',__VK_LAYER_NV_optimus='NVIDIA_only')
-if a.mode=='perf':
-    prefs=root/'Builds'/'perf-prefs'/a.label;prefs.mkdir(parents=True,exist_ok=True);env['XDG_CONFIG_HOME']=str(prefs)
+if a.api=='vulkan':
+    # İki GPU varken sürücünün varsayılan sırası ölçülen kartı değiştirmesin.
+    icd=Path('/usr/share/vulkan/icd.d')/('nvidia_icd.json' if a.gpu=='nvidia' else 'intel_icd.json')
+    if icd.exists():
+        env.pop('VK_ICD_FILENAMES',None);env.pop('VK_ADD_DRIVER_FILES',None);env['VK_DRIVER_FILES']=str(icd)
+prefs=root/'Builds'/('perf-prefs' if a.mode=='perf' else 'online-prefs')/a.label
+prefs.mkdir(parents=True,exist_ok=True);env['XDG_CONFIG_HOME']=str(prefs)
 exe=root/'Builds/LinuxTest/Harvester.x86_64'
 common=[str(exe),'-screen-fullscreen','0','-screen-width','1920' if a.mode=='perf' else '1280','-screen-height','1080' if a.mode=='perf' else '720']
 if a.api!='auto':common+=['-force-'+a.api]
@@ -71,10 +76,13 @@ try:
             summary=json.loads(summary_path.read_text())
             result['actual_gpu']=summary['gpu'];result['actual_api']=summary['api']
             result['actual_resolution']=[summary['width'],summary['height']]
+            expected_api={'vulkan':'Vulkan','glcore':'OpenGLCore'}.get(a.api)
+            result['api_matches_request']=expected_api is None or summary['api']==expected_api
             result['debris_collision_disabled_actual']=summary.get('debrisCollisionDisabled',False)
             gpu_ok=('NVIDIA' in summary['gpu']) if a.gpu=='nvidia' else ('Intel' in summary['gpu'])
             result['passed']=result['passed'] and gpu_ok and summary['width']==1920 and summary['height']==1080
             result['passed']=result['passed'] and result['debris_collision_disabled_actual']==a.no_debris_collision
+            result['passed']=result['passed'] and result['api_matches_request']
 
     for path in out.glob('*.log'):
         text=read(path)

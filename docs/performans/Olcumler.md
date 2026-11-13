@@ -18,5 +18,9 @@
 | [p6-intel](sonuclar/p6-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.43 | desteklenmiyor | 16.76 | 123.00 | 28049.00 | 8202.00 / 19822.00 | 94.3 |
 | [p8-intel](sonuclar/p8-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.22 | desteklenmiyor | 16.76 | 123.00 | 28049.00 | 2692.00 / 14510.00 | 93.3 |
 | [p9-intel](sonuclar/p9-intel.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.45 | desteklenmiyor | 16.77 | 121.00 | 25421.00 | 2692.00 / 14640.00 | 92.1 |
+| [p10-intel-vulkan](sonuclar/p10-intel-vulkan.json) | Intel(R) Iris(R) Xe Graphics (ADL GT2) / Vulkan | Düşük / 0.500 | 60.0 | 5.60 | 2.75 | 16.78 | 121.00 | 25421.00 | 2692.00 / 14680.00 | 93.3 |
+| [p10-intel-glcore](sonuclar/p10-intel-glcore.json) | Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2) / OpenGLCore | Düşük / 0.500 | 60.0 | 5.66 | desteklenmiyor | 16.78 | 121.00 | 25421.00 | 2692.00 / 14648.00 | 94.0 |
+| [p10-nvidia-vulkan](sonuclar/p10-nvidia-vulkan.json) | NVIDIA GeForce RTX 3060 Laptop GPU / Vulkan | Yüksek / 0.500 | 60.0 | 1.96 | 0.39 | 2.31 | 308.00 | 58615.00 | 2692.00 / 10314.00 | 92.0 |
+| [p10-nvidia-glcore-final](sonuclar/p10-nvidia-glcore-final.json) | NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2 / OpenGLCore | Yüksek / 0.500 | 60.0 | 3.19 | desteklenmiyor | 3.20 | 290.00 | 65151.00 | 2692.00 / 10314.00 | 93.9 |
 
 Yüzdelikler sıralanmış kare örneklerinde nearest-rank yöntemiyle hesaplanır. FrameTimingManager desteklenmezse CPU ana/render için ProfilerRecorder işaretçisi kullanılır; geçersiz ölçüm -1 ve sıfır geçerli örnekle raporlanır. GPU ölçümü CPU süresinden türetilmez. Ham CSV ve tam player günlükleri Builds/reports/<etiket>/ altında git dışındadır. Başka GPU, API, kalite, ölçek veya yaşayan araç dağılımı olan koşular birebir eşdeğer kabul edilmemelidir.

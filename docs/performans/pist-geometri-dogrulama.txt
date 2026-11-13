@@ -6,3 +6,5 @@ Yol/bariyer SHA256=68-C4-96-46-01-FA-23-33-64-AA-08-68-38-75-94-BF-53-35-2C-AE-D
 
 Yol/bariyer geometri hash'i, pist uzunluğu ve genişliği birebir aynı.
 CarContactSolver sahne serileştirme bloğu özgün haliyle korundu.
+
+Ek denetim: P8 sahnesindeki 42 Yol_/Bariyer_/BariyerCarpisma_ mesh nesnesinin bütün serileştirilmiş verisi P9 ile eşit (vertex, index, normal, UV dahil).

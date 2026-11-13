@@ -1,4 +1,4 @@
-# Codex → Claude devir notu — 13 Kasım 2026
+# Codex → Claude devir notu — 14 Kasım 2026
 
 Dal: `yaris-entegrasyon`. Main'e merge edilmedi. Önce bu belgeyi, ardından `DEVIR_CODEX.md` ve `YarisMimarisi.md` belgelerini oku. `DEVIR_CODEX.md` ilk devir anını anlatır; aşağıdaki durum daha günceldir.
 
@@ -16,7 +16,10 @@ Dal: `yaris-entegrasyon`. Main'e merge edilmedi. Önce bu belgeyi, ardından `DE
 - `0463804`: P7 yalnız genel yerel efekt havuzu hazır. Enkaz kısmı kullanıcı isteğiyle bekliyor. Yarış tüketicisi olmadığı için FPS kazancı değildir.
 - `4a9fb3d`: P8 HUD önbelleği; GC medyanı 8.202 → 2.692 B/kare (%67,2 azalma).
 
-Ölçümler: `docs/performans/Olcumler.md`, ayrıntılar `P0.md`–`P8.md`, JSON özetleri `sonuclar/`. Ham CSV ve günlükler `Builds/reports/` altında git dışındadır. OpenGL GPU süresini desteklemiyor: -1/sıfır geçerli örnek, CPU'dan türetilmiş GPU süresi yok. P2'de vSync değiştiğinden RTX hızlanmasının tamamı Forward+ kazancı değildir; Intel'in 16,79 ms p95'i 60 FPS sınırını içerir.
+- `2bc8032`: P9 uzak zemin/lambalar; 42 yol/bariyer/collider mesh verisi aynı, zemin 73.728 → 27.264 üçgen.
+- P10 son build ve iki player Relay testi geçti; Vulkan → OpenGLCore, Mono, post işlem varyant ayıklaması. P10 commit kimliği git geçmişindedir.
+
+Ölçümler: `docs/performans/Olcumler.md`, ayrıntılar `P0.md`–`P10.md`, JSON özetleri `sonuclar/`. Ham CSV ve günlükler `Builds/reports/` altında git dışındadır. OpenGL GPU süresini desteklemiyor: -1/sıfır geçerli örnek, CPU'dan türetilmiş GPU süresi yok. P2'de vSync değiştiğinden RTX hızlanmasının tamamı Forward+ kazancı değildir; Intel'in 16,79 ms p95'i 60 FPS sınırını içerir.
 
 ## Kullanıcının son isteği: GEÇİCİ çarpışmasız enkaz testi
 
@@ -39,10 +42,10 @@ Doğrulama: Play mode'da katalogdaki beş aracın her biri için 17 enkaz Rigidb
 
 ## Kalan işler ve korunacak kararlar
 
-Kullanıcı daha sonra P4–P10'a devam edilmesini istedi. **P4/P5/P6/P8 tamamlandı ve push edildi; P7'nin yalnız genel havuz kısmı tamamlandı. Enkaz/collider kısmı son kullanıcı talimatıyla bekliyor. P9 ölçümü sürüyor, P10 henüz yapılmadı.** Yeni PR açılmadı. Tam optimizasyon tamamlandı diye raporlama.
+Kullanıcı daha sonra P4–P10'a devam edilmesini istedi. **P4/P5/P6/P8/P9/P10 tamamlandı; P7'nin yalnız genel havuz kısmı tamamlandı. Enkaz/collider kısmı son kullanıcı talimatıyla bekliyor ve önceki istek karşılanmadı.** Sonuç/kanıtlar: `docs/performans/Sonuc.md`, manuel liste: `docs/performans/KullaniciTesti.md`. Son build 0 hata/0 uyarı, son Relay testi geçti. Değişiklikler ayrı büyük adım commit'leriyle push edildi; main'e merge edilmez. Bundan sonraki adım kullanıcı testi ve geri bildirimdir.
 
 `DEVIR_CODEX.md` 6. bölümündeki konulara dokunulmadı: harvester davranışı/boyutu, CarContactSolver, ertelenen frustum uyarısı, Windows build, VDS ayarları. Harvester spot menzili 130 m kaldı. Geçici enkaz isteği, harvester avlama modeli veya canlı araç–araç çarpışmasını değiştirme izni değildir.
 
-Kurucular: `Harvester/Apply Quality Levels`, `Harvester/Apply Visibility Budget`, `Harvester/Doğrulama/Yarış Projesi`. Tek editör kuralı geçerli; build/play/sahne değişimi aynı anda yürütülmez. Script refresh sonrası domain reload'un tamamlanmasını bekle.
+Yeni LOD/build kurucuları ve tam dosya listesi Sonuc.md içindedir. Kurucular: `Harvester/Apply Quality Levels`, `Harvester/Apply Visibility Budget`, `Harvester/Doğrulama/Yarış Projesi`. Tek editör kuralı geçerli; build/play/sahne değişimi aynı anda yürütülmez. Script refresh sonrası domain reload'un tamamlanmasını bekle.
 
 TMP TerminalFont/fallback/Roboto atlas gürültülerini commit'leme. Yerel `.vscode/`, `CLAUDE.md`, `Harvester.slnx`, `Assets/UserChoices.choices*`, `agent.txt` ve önceden var olan `Assets/Resources.meta` bu işe dahil edilmedi. Katalog sırası değişmedi. `Assets/Cars/` yeniden üretilmedi.

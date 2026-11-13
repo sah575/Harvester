@@ -1,0 +1,38 @@
+{
+  "label": "p10-nvidia-glcore",
+  "gpu_requested": "nvidia",
+  "api_requested": "glcore",
+  "mode": "perf",
+  "debris_collision_disabled_requested": false,
+  "passed": false,
+  "summary": [
+    "[Perf] Sayaç desteklenmiyor: Render Thread",
+    "[Perf] BAŞLADI etiket=p10-nvidia-glcore GPU=NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2 API=OpenGLCore hedef=60 sn",
+    "[Perf] örneklenen=10.0/60 sn; yaşayan=4",
+    "[Perf] örneklenen=20.0/60 sn; yaşayan=4",
+    "[Perf] örneklenen=30.0/60 sn; yaşayan=3",
+    "[Perf] örneklenen=40.0/60 sn; yaşayan=4",
+    "[Perf] örneklenen=50.0/60 sn; yaşayan=4",
+    "[Perf] wall_ms n=42353 p50=1.07 p95=3.0423 p99=7.4358",
+    "[Perf] cpu_ms n=42353 p50=1.0699 p95=3.0428 p99=7.4419",
+    "[Perf] cpu_main_ms n=42353 p50=1.0654 p95=3.0289 p99=7.4262",
+    "[Perf] cpu_render_ms n=42353 p50=0.3497 p95=0.7269 p99=1.0092",
+    "[Perf] gpu_ms n=0 p50=-1 p95=-1 p99=-1",
+    "[Perf] present_wait_ms n=42353 p50=0 p95=0 p99=0",
+    "[Perf] draw_calls n=42353 p50=232 p95=286 p99=388",
+    "[Perf] setpass n=42353 p50=29 p95=40 p99=41",
+    "[Perf] batches n=42353 p50=213 p95=262 p99=351",
+    "[Perf] triangles n=42353 p50=53729 p95=70055 p99=80303",
+    "[Perf] shadow_casters n=42353 p50=79 p95=152 p99=158",
+    "[Perf] gc_bytes n=42353 p50=2692 p95=3424 p99=10210",
+    "[Perf] TAMAMLANDI {\"label\":\"p10-nvidia-glcore\",\"gpu\":\"NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2\",\"api\":\"OpenGLCore\",\"quality\":\"Yüksek\",\"unity\":\"6000.0.85f1\",\"csv\":\"/home/zoro/harvester/Harvester/Builds/reports/p10-nvidia-glcore/p10-nvidia-glcore.csv\",\"persistentDataPath\":\"/home/zoro/harvester/Harvester/Builds/perf-prefs/p10-nvidia-glcore/unity3d/DefaultCompany/Harvester3D\",\"width\":1910,\"height\":1027,\"frames\":42353,\"minAlive\":3,\"maxAlive\":4,\"fourAliveFrames\":39194,\"capturedSeconds\":60.00049611058785,\"wallSeconds\":140.235306525,\"renderScale\":0.5,\"mirrorRequested\":true,\"frameTimingAvailable\":true,\"debrisCollisionDisabled\":false,\"metrics\":[{\"name\":\"wall_ms\",\"validSamples\":42353,\"p50\":1.070039696060121,\"p95\":3.04227601736784,\"p99\":7.435792125761509},{\"name\":\"cpu_ms\",\"validSamples\":42353,\"p50\":1.069941,\"p95\":3.042778,\"p99\":7.441897},{\"name\":\"cpu_main_ms\",\"validSamples\":42353,\"p50\":1.06544,\"p95\":3.028938,\"p99\":7.426216},{\"name\":\"cpu_render_ms\",\"validSamples\":42353,\"p50\":0.349726,\"p95\":0.726948,\"p99\":1.009229},{\"name\":\"gpu_ms\",\"validSamples\":0,\"p50\":-1.0,\"p95\":-1.0,\"p99\":-1.0},{\"name\":\"present_wait_ms\",\"validSamples\":42353,\"p50\":0.0,\"p95\":0.0,\"p99\":0.0},{\"name\":\"draw_calls\",\"validSamples\":42353,\"p50\":232.0,\"p95\":286.0,\"p99\":388.0},{\"name\":\"setpass\",\"validSamples\":42353,\"p50\":29.0,\"p95\":40.0,\"p99\":41.0},{\"name\":\"batches\",\"validSamples\":42353,\"p50\":213.0,\"p95\":262.0,\"p99\":351.0},{\"name\":\"triangles\",\"validSamples\":42353,\"p50\":53729.0,\"p95\":70055.0,\"p99\":80303.0},{\"name\":\"shadow_casters\",\"validSamples\":42353,\"p50\":79.0,\"p95\":152.0,\"p99\":158.0},{\"name\":\"gc_bytes\",\"validSamples\":42353,\"p50\":2692.0,\"p95\":3424.0,\"p99\":10210.0}]}"
+  ],
+  "actual_gpu": "NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2",
+  "actual_api": "OpenGLCore",
+  "actual_resolution": [
+    1910,
+    1027
+  ],
+  "api_matches_request": true,
+  "debris_collision_disabled_actual": false
+}
