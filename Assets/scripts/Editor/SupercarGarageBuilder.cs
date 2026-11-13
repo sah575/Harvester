@@ -23,6 +23,34 @@ public static class SupercarGarageBuilder
     [MenuItem("Harvester/Arayüz/Muscle Fastback'i Garaja Ekle")]
     public static void BuildMuscle() { Integrate("MuscleFastback_01","V8 Kaslı Fastback",9000); }
 
+    [MenuItem("Harvester/Arayüz/Hot Hatch'i Garaja Ekle")]
+    public static void BuildHotHatch()
+    {
+        Integrate("HotHatch_01","Turbo Hatch",6000);
+        var definition=AssetDatabase.LoadAssetAtPath<CarDefinition>("Assets/Cars/HotHatch_01/HotHatch_01_Tanim.asset");
+        var identity=JsonUtility.FromJson<HotIdentity>(System.IO.File.ReadAllText("Assets/Cars/HotHatch_01/HotHatch_01_kimlik.json"));
+        foreach(var slot in definition.slots)
+        {
+            var field=typeof(HotParts).GetField(slot.id);
+            var names=slot.id=="rim"?identity.jantlar:field!=null&&identity.slotlar!=null?(string[])field.GetValue(identity.slotlar):null;
+            if(names==null)continue;
+            for(int i=0;i<names.Length&&i<slot.variants.Count;i++)
+            {
+                string name=names[i].Replace("time attack","zamana karşı").Replace("aero","aerodinamik").Replace("stok","standart").Replace("file","örgü");
+                if(name.Length>0)slot.variants[i].displayName=char.ToUpper(name[0],System.Globalization.CultureInfo.GetCultureInfo("tr-TR"))+name.Substring(1);
+            }
+            if(slot.id=="rollcage")slot.displayName="Takla kafesi";
+        }
+        EditorUtility.SetDirty(definition);AssetDatabase.SaveAssetIfDirty(definition);
+    }
+    // Model kimlikleri korunur; yalnızca oyuncuya gösterilen adlar teslim JSON'undan alınır.
+    [Serializable] class HotIdentity { public HotParts slotlar;public string[] jantlar; }
+    [Serializable] class HotParts
+    {
+        public string[] bumper_front,bumper_rear,skirts,fender,hood,spoiler,exhaust,headlight,taillight;
+        public string[] mirror,roof_scoop,rollcage,neon,steering,interior_passenger,interior_pillar,frunk;
+    }
+
     public static void Integrate(string id,string displayName,int price)
     {
         string folder="Assets/Cars/"+id+"/";

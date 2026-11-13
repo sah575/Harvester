@@ -30,7 +30,7 @@ GrandTourerV8_01: görünen ad **V8 Uzun Kaput**, başlangıç fiyatı **10.000 
 
 Çalışma sırasında gelen ikinci araç **MuscleFastback_01**, görünen adı **V8 Kaslı Fastback**, fiyatı **9.000 Hurda** olarak eklendi. Onda da 20 modifiye/6 boya yuvası var. Malzeme bağlantıları, model önizlemesi ve CarLoadoutStore kayıt döngüsü doğrulandı.
 
-Katalog sırası korunmuştur: RacerCoupe_01 → SupercarV10_01 → GrandTourerV8_01 → MuscleFastback_01. UI envanteri artık mevcut sırasını koruyup yeni tanımları sona ekler. FBX'in kendisi değiştirilmedi; Read/Write açıldı, stok dışı varyantları kapatan model prefab'ı ve modelden ölçülen tanım üretildi. Rebuild Race Car çalıştırılmadı.
+Katalog sırası korunmuştur: RacerCoupe_01 → SupercarV10_01 → GrandTourerV8_01 → MuscleFastback_01 → HotHatch_01. UI envanteri artık mevcut sırasını koruyup yeni tanımları sona ekler. FBX'in kendisi değiştirilmedi; Read/Write açıldı, stok dışı varyantları kapatan model prefab'ı ve modelden ölçülen tanım üretildi. Rebuild Race Car çalıştırılmadı.
 
 ## Değişen dosyalar
 
@@ -44,7 +44,7 @@ Katalog sırası korunmuştur: RacerCoupe_01 → SupercarV10_01 → GrandTourerV
 - `Assets/scripts/Editor/SupercarGarageBuilder.cs`: ortak entegrasyon yordamı ve V8 kurucu menüsü.
 - `Assets/Cars/GrandTourerV8_01/` ve `Assets/Cars/MuscleFastback_01/`: verilen model, kimlik/malzemeler, yeni prefab ve tanım.
 - `Assets/UI/MenuCarRegistry.asset`, `TerminalFont.asset`, `Assets/Scenes/Lobby.unity`: kurucu çıktıları.
-- `Assets/UI/Captures/Atolye/Teslim/`: altı güncel ekran görüntüsü. Görüntüler test kayıtlarıyla alınmıştır; test sonunda kullanıcının kayıtları geri yüklenmiştir.
+- `Assets/UI/Captures/Atolye/Teslim/`: yedi güncel ekran görüntüsü. Görüntüler test kayıtlarıyla alınmıştır; test sonunda kullanıcının kayıtları geri yüklenmiştir.
 
 ## Kontroller
 
@@ -68,3 +68,16 @@ Gerçek iki istemcili yarış/tur testi yapılmadı. Mevcut yarış CarCatalog e
 [Galeri](Captures/Atolye/Teslim/01-arac-galerisi.png) · [Atölye](Captures/Atolye/Teslim/02-atolye.png) · [Jant yakın plan](Captures/Atolye/Teslim/03-jant-yakin-plan.png) · [Performans](Captures/Atolye/Teslim/04-performans.png) · [Boya](Captures/Atolye/Teslim/05-boya.png)
 
 [Muscle Fastback galerisi](Captures/Atolye/Teslim/06-muscle-galeri.png)
+
+
+## Turbo Hatch entegrasyonu
+
+HotHatch_01, **Turbo Hatch** adıyla **6.000 Hurda** fiyatından beşinci araç olarak eklendi. 20 modifiye yuvası, 6 boya yuvası ve 6 performans kategorisi var. Ölçülen stok gövde 4,31 × 1,86 × 1,45 m. Temel performans mevcut varsayılanlarla başlar; kimlik JSON'undaki AWD ve karakter puanları yalnızca öneridir, sürüş API'si değiştirilmedi.
+
+`Harvester/Arayüz/Hot Hatch'i Garaja Ekle` menüsü stok prefab'ı ve tanımı üretir; görünen parça adlarını teslim edilen kimlik JSON'undaki Türkçe adlardan alır. Model nesne adları ve kayıt anahtarları korunur. Katalog sırası değiştirilmeden sona eklenir.
+
+Dosyalar: `Assets/Cars/HotHatch_01/` (verilen model, malzemeler ve kimlik + üretilen prefab/tanım), `Assets/scripts/Editor/SupercarGarageBuilder.cs`, UI envanteri ve ekran görüntüsü.
+
+Kontrol: galeri 05/05, doğru CarVisual modeli, eksik malzeme olmaması, gerçek UI üzerinden satın alma/garaja geçiş, dört jantın Türbin varyantına geçmesi ve CarLoadoutStore'da jant 2 olarak kayıt/yükleme geçti. Unity konsolunda hata yok. Oyuncunun para, sahiplik, aktif araç ve araç başına modifiye kayıtları testten sonra geri yüklendi. Yarış testi yapılmadı; önceki CarCatalog sınırlaması sürüyor.
+
+[Turbo Hatch ekran görüntüsü](Captures/Atolye/Teslim/07-turbo-hatch.png)
