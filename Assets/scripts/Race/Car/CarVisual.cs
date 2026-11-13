@@ -10,7 +10,7 @@ namespace Harvester.Race
     ///
     /// - Parça varyantlarını açıp kapatır (tanımdaki CarModSlot listesi).
     /// - Renkleri MaterialPropertyBlock ile verir (_BaseColor, parlayanlarda _EmissionColor); malzeme kopyalanmaz.
-    /// - light_head_* noktalarına spot far, light_tail_* noktalarına küçük kırmızı ışık koyar; frende stop lambaları parlar.
+    /// - light_head_* noktalarına spot far koyar; stoplar yalnız emisyonla frende parlar.
     /// - Tekerlek başına bir "göbek" oluşturur: göbek direksiyonla döner ve kaliperi taşır, tekerlek (jantıyla) göbeğin içinde yuvarlanır.
     /// - İsteğe bağlı: tekerlekler dışındaki bütün parçaları malzemeye göre tek mesh'te birleştirir (draw call azalır).
     ///   Parçalanmada birleşik mesh silinip asıl parçalar geri açılır.
@@ -38,10 +38,6 @@ namespace Harvester.Race
         [SerializeField] private float headlightForwardOffset = 0.1f;
 
         [Header("Stop lambaları (light_tail_*)")]
-        [SerializeField] private Color taillightColor = new Color(1f, 0.08f, 0.04f);
-        [SerializeField] private float taillightRange = 4f;
-        [SerializeField] private float taillightIntensity = 0.6f;
-        [SerializeField] private float brakeLightIntensity = 3f;
         [Tooltip("Frende stop malzemesinin parlaklık çarpanı")]
         [SerializeField] private float brakeEmissionBoost = 3f;
         [Tooltip("Bu yavaşlamanın üstü fren sayılır (m/sn²). Boşta yavaşlama 2.5, fren 22.")]
@@ -58,7 +54,8 @@ namespace Harvester.Race
 
         private RaceCar car;
         private readonly Dictionary<string, Transform> parts = new Dictionary<string, Transform>();
-        private readonly List<Light> tailLights = new List<Light>();
+        private readonly List<Light> headLights = new List<Light>();
+        private float nextLightBudget;
         private readonly List<Renderer> combinedSources = new List<Renderer>();
         private GameObject combinedObject;
         private Mesh combinedMesh;
@@ -107,7 +104,6 @@ namespace Harvester.Race
             BuildHubs(def);
             CockpitAnchor = Find(def.cockpitAnchor);
             foreach (var n in def.headlightAnchors) AddHeadlight(Find(n));
-            foreach (var n in def.taillightAnchors) AddTaillight(Find(n));
             return true;
         }
 
@@ -191,22 +187,21 @@ namespace Harvester.Race
             light.intensity = headlightIntensity;
             light.color = headlightColor;
             light.shadows = LightShadows.None;
+            headLights.Add(light);
         }
 
-        private void AddTaillight(Transform anchor)
+        // Yerel araç daima tam; uzaktaki farlar 60–120 m arasında yumuşakça söner.
+        static float HeadlightFactor(float distance, bool local)
+        { return local ? 1f : 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(60f, 120f, distance)); }
+
+        private void UpdateLightBudget()
         {
-            if (anchor == null) return;
-            var go = new GameObject("Stop");
-            go.transform.SetParent(anchor, false);
-            go.transform.localPosition = new Vector3(0f, 0f, 0.15f); // lambanın biraz arkasında, gövdeyi değil yolu aydınlatsın
-            var light = go.AddComponent<Light>();
-            light.type = LightType.Point;
-            light.range = taillightRange;
-            light.intensity = taillightIntensity;
-            light.color = taillightColor;
-            light.shadows = LightShadows.None;
-            light.renderMode = LightRenderMode.ForceVertex; // ucuz: piksel ışığı sınırını farlara bırak
-            tailLights.Add(light);
+            nextLightBudget = Time.unscaledTime + .2f;
+            var observer = CarCamera.Current;
+            bool local = car == RaceCar.Local || observer == null;
+            float factor = HeadlightFactor(local ? 0 : Vector3.Distance(transform.position, observer.transform.position), local);
+            foreach (var light in headLights) if (light != null)
+            { light.intensity = headlightIntensity * factor; light.enabled = factor > .001f; }
         }
 
         private bool IsUnderHub(Transform t)
@@ -269,6 +264,7 @@ namespace Harvester.Race
         private void Update()
         {
             if (Model == null || car == null) return;
+            if (Time.unscaledTime >= nextLightBudget) UpdateLightBudget();
             // Frenleme: ileri hızın düşüşünden (sahibinde de uzak kopyada da aynı kural)
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
@@ -279,8 +275,6 @@ namespace Harvester.Race
             bool now = !car.IsEliminated && Mathf.Abs(speed) > 1f && smoothedDecel > brakeDetectDecel;
             if (now == braking) return;
             braking = now;
-            for (int i = 0; i < tailLights.Count; i++)
-                if (tailLights[i] != null) tailLights[i].intensity = braking ? brakeLightIntensity : taillightIntensity;
             ApplyBrakeColor();
         }
 
@@ -389,7 +383,7 @@ namespace Harvester.Race
         {
             if (Model == null) return;
             Uncombine();
-            for (int i = 0; i < tailLights.Count; i++) if (tailLights[i] != null) tailLights[i].enabled = false;
+            for (int i = 0; i < headLights.Count; i++) if (headLights[i] != null) headLights[i].enabled = false;
 
             Vector3 center = transform.position + transform.up * 0.5f;
             var pieces = new List<Transform>();
@@ -439,7 +433,7 @@ namespace Harvester.Race
             for (int i = 0; i < 4; i++) Wheels[i] = Hubs[i] = null;
             parts.Clear();
             targets.Clear();
-            tailLights.Clear();
+            headLights.Clear();
         }
 
         /// <summary>Nesnenin açık mesh'lerini saran kutu collider ekler (kendi uzayında). Mesh yoksa false.</summary>
@@ -482,7 +476,7 @@ namespace Harvester.Race
             for (int i = 0; i < 4; i++) Wheels[i] = Hubs[i] = null;
             parts.Clear();
             targets.Clear();
-            tailLights.Clear();
+            headLights.Clear();
         }
 
         private void OnDestroy()
