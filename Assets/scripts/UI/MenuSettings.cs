@@ -10,24 +10,40 @@ namespace Harvester.UI
     public static class MenuSettings
     {
         const string Prefix="Harvester.Ayarlar.";
+        const string ScaleKey=Prefix+"ÖlçekÇarpanı.v2";
+        const string LegacyScaleKey=Prefix+"Ölçek";
         static readonly Dictionary<UniversalRenderPipelineAsset,float> originalScales = new Dictionary<UniversalRenderPipelineAsset,float>();
         public static float MusicVolume => PlayerPrefs.GetFloat(Prefix+"Müzik",.7f);
         public static float EffectVolume => PlayerPrefs.GetFloat(Prefix+"Efekt",1);
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void ApplySaved()
         {
+            RestoreScale();
             Application.quitting -= RestoreScale; Application.quitting += RestoreScale;
             AudioListener.volume=PlayerPrefs.GetFloat(Prefix+"Ana",1);
             if(PlayerPrefs.HasKey(Prefix+"Kalite"))QualitySettings.SetQualityLevel(Mathf.Clamp(PlayerPrefs.GetInt(Prefix+"Kalite"),0,QualitySettings.names.Length-1));
             if(PlayerPrefs.HasKey(Prefix+"Genişlik"))Screen.SetResolution(PlayerPrefs.GetInt(Prefix+"Genişlik"),PlayerPrefs.GetInt(Prefix+"Yükseklik"),PlayerPrefs.GetInt(Prefix+"TamEkran",1)==1);
-            ApplyScale(PlayerPrefs.GetFloat(Prefix+"Ölçek",1));
+            ApplySavedScale();
         }
-        static void ApplyScale(float value)
+        static float ReadScaleMultiplier()
         {
+            if(PlayerPrefs.HasKey(ScaleKey))return Mathf.Clamp(PlayerPrefs.GetFloat(ScaleKey),.75f,1.25f);
+            if(!PlayerPrefs.HasKey(LegacyScaleKey))return 1;
+            var asset=GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            float baseline=asset!=null?(originalScales.ContainsKey(asset)?originalScales[asset]:asset.renderScale):.5f;
+            return Mathf.Clamp(PlayerPrefs.GetFloat(LegacyScaleKey)/Mathf.Max(.1f,baseline),.75f,1.25f);
+        }
+        static void ApplySavedScale()
+        {
+            // Eski mutlak ölçek kaydı bir kez güvenli çarpana çevrilir. Kayıt yoksa asset'e dokunulmaz.
+            float multiplier=ReadScaleMultiplier();
+            RestoreScale();
+            if(!PlayerPrefs.HasKey(ScaleKey)&&!PlayerPrefs.HasKey(LegacyScaleKey))return;
+            if(!PlayerPrefs.HasKey(ScaleKey)){PlayerPrefs.SetFloat(ScaleKey,multiplier);PlayerPrefs.Save();}
             var asset=GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
             if(asset==null)return;
-            if(!originalScales.ContainsKey(asset))originalScales.Add(asset,asset.renderScale);
-            asset.renderScale=value;
+            originalScales[asset]=asset.renderScale;
+            asset.renderScale=asset.renderScale*multiplier;
         }
         // Editörde paylaşılan URP asset'inin oturumluk değişikliği diske taşınmaz.
         public static void RestoreScale(){foreach(var pair in originalScales)if(pair.Key!=null)pair.Key.renderScale=pair.Value;originalScales.Clear();}
@@ -49,8 +65,8 @@ namespace Harvester.UI
             Dropdown(parent,"Tam ekran",new List<string>{"Kapalı","Açık"},PlayerPrefs.GetInt(Prefix+"TamEkran",Screen.fullScreen?1:0),i=>
             {PlayerPrefs.SetInt(Prefix+"TamEkran",i);PlayerPrefs.SetInt(Prefix+"Genişlik",Screen.width);PlayerPrefs.SetInt(Prefix+"Yükseklik",Screen.height);Screen.fullScreen=i==1;PlayerPrefs.Save();});
             var qualities=new List<string>();for(int i=0;i<QualitySettings.names.Length;i++)qualities.Add("Kalite "+(i+1));
-            Dropdown(parent,"Kalite",qualities,QualitySettings.GetQualityLevel(),i=>{QualitySettings.SetQualityLevel(i);PlayerPrefs.SetInt(Prefix+"Kalite",i);ApplyScale(PlayerPrefs.GetFloat(Prefix+"Ölçek",1));PlayerPrefs.Save();});
-            Range(parent,"Render ölçeği",PlayerPrefs.GetFloat(Prefix+"Ölçek",1),.5f,1.5f,v=>{PlayerPrefs.SetFloat(Prefix+"Ölçek",v);ApplyScale(v);PlayerPrefs.Save();});
+            Dropdown(parent,"Kalite",qualities,QualitySettings.GetQualityLevel(),i=>{QualitySettings.SetQualityLevel(i);PlayerPrefs.SetInt(Prefix+"Kalite",i);ApplySavedScale();PlayerPrefs.Save();});
+            Range(parent,"Görüntü ölçeği (çarpan)",ReadScaleMultiplier(),.75f,1.25f,v=>{PlayerPrefs.SetFloat(ScaleKey,v);ApplySavedScale();PlayerPrefs.Save();});
             MenuWidgets.Text(parent,"KAMERA",28,42);
             Dropdown(parent,"Dikiz aynası",new List<string>{"Kapalı","Açık"},PlayerPrefs.GetInt("Harvester.RearViewMirror",1),i=>{Harvester.Race.RearViewMirror.UserEnabled=i==1;PlayerPrefs.Save();});
             Dropdown(parent,"Varsayılan kamera",new List<string>{"Yakın takip","Uzak takip","Kaput","Kokpit"},PlayerPrefs.GetInt("Harvester.CarCameraMode",0),i=>{PlayerPrefs.SetInt("Harvester.CarCameraMode",i);PlayerPrefs.Save();});
