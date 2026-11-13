@@ -21,7 +21,7 @@ namespace Harvester.UI
             RestoreScale();
             Application.quitting -= RestoreScale; Application.quitting += RestoreScale;
             AudioListener.volume=PlayerPrefs.GetFloat(Prefix+"Ana",1);
-            if(PlayerPrefs.HasKey(Prefix+"Kalite"))QualitySettings.SetQualityLevel(Mathf.Clamp(PlayerPrefs.GetInt(Prefix+"Kalite"),0,QualitySettings.names.Length-1));
+            Harvester.Race.RuntimeQuality.Initialize();
             if(PlayerPrefs.HasKey(Prefix+"Genişlik"))Screen.SetResolution(PlayerPrefs.GetInt(Prefix+"Genişlik"),PlayerPrefs.GetInt(Prefix+"Yükseklik"),PlayerPrefs.GetInt(Prefix+"TamEkran",1)==1);
             ApplySavedScale();
         }
@@ -64,8 +64,8 @@ namespace Harvester.UI
             });
             Dropdown(parent,"Tam ekran",new List<string>{"Kapalı","Açık"},PlayerPrefs.GetInt(Prefix+"TamEkran",Screen.fullScreen?1:0),i=>
             {PlayerPrefs.SetInt(Prefix+"TamEkran",i);PlayerPrefs.SetInt(Prefix+"Genişlik",Screen.width);PlayerPrefs.SetInt(Prefix+"Yükseklik",Screen.height);Screen.fullScreen=i==1;PlayerPrefs.Save();});
-            var qualities=new List<string>();for(int i=0;i<QualitySettings.names.Length;i++)qualities.Add("Kalite "+(i+1));
-            Dropdown(parent,"Kalite",qualities,QualitySettings.GetQualityLevel(),i=>{QualitySettings.SetQualityLevel(i);PlayerPrefs.SetInt(Prefix+"Kalite",i);ApplySavedScale();PlayerPrefs.Save();});
+            var qualities=new List<string>(QualitySettings.names);
+            Dropdown(parent,"Kalite",qualities,QualitySettings.GetQualityLevel(),i=>{Harvester.Race.RuntimeQuality.SetUserLevel(i);ApplySavedScale();PlayerPrefs.Save();});
             Range(parent,"Görüntü ölçeği (çarpan)",ReadScaleMultiplier(),.75f,1.25f,v=>{PlayerPrefs.SetFloat(ScaleKey,v);ApplySavedScale();PlayerPrefs.Save();});
             MenuWidgets.Text(parent,"KAMERA",28,42);
             Dropdown(parent,"Dikiz aynası",new List<string>{"Kapalı","Açık"},PlayerPrefs.GetInt("Harvester.RearViewMirror",1),i=>{Harvester.Race.RearViewMirror.UserEnabled=i==1;PlayerPrefs.Save();});
