@@ -2,6 +2,10 @@
 
 Dal: `yaris-entegrasyon`. Main'e merge edilmedi. Önce bu belgeyi, ardından `DEVIR_CODEX.md` ve `YarisMimarisi.md` belgelerini oku. `DEVIR_CODEX.md` ilk devir anını anlatır; aşağıdaki durum daha günceldir.
 
+**Son teslim:** P10 kod/rapor commit'i `9b509cd`; bütün büyük adımlar push edildi. [Taslak PR #6](https://github.com/sah575/Harvester/pull/6) açık; yeni PR açma, main'e merge etme. Kullanıcı artık manuel oyunu test etmeye başlıyor; sıradaki iş onun geri bildirimini almaktır. Test sırasında yeniden build/sahne kurma veya yeni optimizasyon başlatma. Enkaz isteğinin karşılanmadığına ilişkin aşağıdaki kullanıcı düzeltmesi özellikle geçerlidir.
+
+Ölçüm JSON özetleri, doğrulama kanıtları ve ekran görüntüleri git'tedir. Ham CSV ve tam player günlükleri bu çalışma alanında `Builds/reports/` altında yereldir (git dışı); konuşma bağlamından bağımsız dosyalardır. Son çalıştırılabilir Linux build `Builds/LinuxTest/Harvester.x86_64`. Sonuç raporu: [performans/Sonuc.md](performans/Sonuc.md); manuel test listesi: [performans/KullaniciTesti.md](performans/KullaniciTesti.md).
+
 ## Tamamlanan ve push edilen işler
 
 - `fc1d932`: eski saklambaç dosyalarının temizliği. GUID/eksik referans denetimi ve iki player ile Relay üzerinden Lobby → race → bağlantı açık Lobby dönüşü geçti. Harvester görseli ve ağ prefab hash'i korundu.
