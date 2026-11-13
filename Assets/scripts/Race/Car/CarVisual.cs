@@ -139,6 +139,7 @@ namespace Harvester.Race
             if (combineStaticMeshes) Combine();
             CollectTargets();
             ApplyColors();
+            VisibilityBudget.MarkCarDetails(Model);
         }
 
         // ------------------------------------------------------------------ Model parçaları

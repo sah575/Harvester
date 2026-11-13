@@ -706,6 +706,8 @@ public static class TrackBuilder
         go.transform.localPosition = localPosition;
         go.transform.localScale = scale;
         go.GetComponent<MeshRenderer>().sharedMaterial = material;
+        int detailLayer = LayerMask.NameToLayer(VisibilityBudget.DetailLayer);
+        if (detailLayer >= 0) go.layer = detailLayer;
         GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.BatchingStatic);
         meshCount++;
         triangleCount += (int)CountTriangles(go.GetComponent<MeshFilter>().sharedMesh);
