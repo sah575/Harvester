@@ -1,0 +1,31 @@
+{
+  "id": "MuscleFastback_01",
+  "ad_tr": "V8 Kaslı Fastback Kupa",
+  "sinif": "muscle",
+  "ilham": "Önden motorlu Amerikan V8 kaslı fastback pist/yol kupaları (özgün tasarım)",
+  "boyut_m": {
+    "boy": 4.740,
+    "en": 1.990,
+    "yukseklik": 1.360,
+    "dingil": 2.720
+  },
+  "tekerlek": {
+    "on_yaricap": 0.350,
+    "on_genislik": 0.280,
+    "arka_yaricap": 0.370,
+    "arka_genislik": 0.310
+  },
+  "ozellikler": [
+    "Yüksek omuz çizgisi, merkezi güç kubbeli (cowl-induction) V8 kaput ve keskin Kammback fastback tavan eğimi",
+    "Derin gömülü trapez üst ızgara, diyagonal yan destek dikmeleri (fang struts) ve üç parçalı LED gündüz farı imzası",
+    "Tam genişlikte siyah Kammback arka panel içinde sağda ve solda üçer dikey LED stop barı (tri-bar taillights)",
+    "Kapı ortasından arka tekerlek üstüne yükselen kaslı arka çamurluk omuz çıkıntısı (hockey-stick haunch)",
+    "Tam kapsamlı 17 modifiye slotu, 4 jant stili ve 5 çıkartma katmanı"
+  ],
+  "varsayilan_renkler": {
+    "Paint_Body": "#D9381E",
+    "Paint_Accent": "#F5F7FA",
+    "Paint_Caliper": "#D9381E",
+    "Paint_Rim": "#181A1E"
+  }
+}

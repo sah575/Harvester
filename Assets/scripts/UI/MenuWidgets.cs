@@ -12,7 +12,7 @@ namespace Harvester.UI
         static string Turkce(string text) { return text.Replace("Time Attack","Zamana karşı").Replace("Rollbar","Takla kafesi").Replace("Amber","Kehribar"); }
         public static void StyleFont(GameObject go) { if(Font!=null)foreach(var text in go.GetComponentsInChildren<TMP_Text>(true))text.font=Font; }
         public static readonly Color Ink = new Color(.79f,.83f,.74f);
-        public static readonly Color Accent = new Color(.75f,.42f,.16f);
+        public static readonly Color Accent = new Color(.62f,.73f,.32f);
         public static RectTransform Box(Transform parent, string name, Color color)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image));
@@ -23,9 +23,9 @@ namespace Harvester.UI
         { rect.anchorMin=min; rect.anchorMax=max; rect.offsetMin=Vector2.zero; rect.offsetMax=Vector2.zero; }
         public static RectTransform Column(Transform parent, string name)
         {
-            var r=Box(parent,name,new Color(.045f,.055f,.052f,.98f));
+            var r=Box(parent,name,new Color(.035f,.043f,.035f,.88f));
             var l=r.gameObject.AddComponent<VerticalLayoutGroup>();
-            l.padding=new RectOffset(24,24,20,20); l.spacing=10; l.childControlWidth=true;
+            l.padding=new RectOffset(14,18,14,14); l.spacing=10; l.childControlWidth=true;
             l.childControlHeight=true; l.childForceExpandWidth=true; l.childForceExpandHeight=false;
             return r;
         }
@@ -54,7 +54,7 @@ namespace Harvester.UI
         }
         public static RectTransform Scroll(Transform parent,string name)
         {
-            var outer=Box(parent,name,new Color(.035f,.044f,.041f));
+            var outer=Box(parent,name,new Color(.035f,.044f,.041f,.65f));
             var viewport=Box(outer,"Görünüm",Color.white); Fill(viewport,Vector2.zero,Vector2.one);
             viewport.gameObject.AddComponent<RectMask2D>(); viewport.GetComponent<Image>().enabled=false;
             var content=Column(viewport,"İçerik"); content.anchorMin=new Vector2(0,1); content.anchorMax=Vector2.one; content.pivot=new Vector2(.5f,1); content.sizeDelta=Vector2.zero;

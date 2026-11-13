@@ -1,0 +1,859 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: df0060bf801a0c70ba15e437077405d7, type: 3}
+  m_Name: GrandTourerV8_01_Tanim
+  m_EditorClassIdentifier: 
+  id: GrandTourerV8_01
+  displayName: V8 Uzun Kaput
+  price: 10000
+  modelPrefab: {fileID: 2527209411848245851, guid: abbcfddc4771a0d27942449f2f79c8f4, type: 3}
+  cockpitAnchor: camera_cockpit
+  headlightAnchors:
+  - light_head_L
+  - light_head_R
+  taillightAnchors:
+  - light_tail_L
+  - light_tail_R
+  brakeLightMaterial: {fileID: 2100000, guid: d19c3bcf508031095bd93327e84999ea, type: 2}
+  caliperSuffix: _caliper
+  shatterPrefixes:
+  - door_
+  - fender_
+  - mod_hood_
+  - mod_bumper_
+  - roof_cabin
+  - engine_decklid
+  - mod_spoiler_
+  baseStats:
+    topSpeed: 40
+    maxAcceleration: 12
+    accelerationCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.85
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.85
+        value: 0.45
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    brakeDeceleration: 22
+    reverseTopSpeed: 12
+    reverseAcceleration: 8
+    coastDeceleration: 2.5
+    handbrakeDeceleration: 6
+    downforce: 2.5
+    maxSteerAngle: 34
+    highSpeedSteerAngle: 9
+    steerFalloffSpeed: 35
+    steerSpeed: 160
+    steerAssist: 5
+    maxCornerAccel: 15
+    frontGrip: 28
+    rearGrip: 34
+    tireFriction: 1.5
+    handbrakeRearGrip: 0.55
+    driftYawBoost: 1.25
+    gripForceHeight: 0.75
+    mass: 1200
+    centerOfMassHeight: 0.29
+    suspensionUp: 0.22
+    suspensionDroop: 0.12
+    springStrength: 24500
+    damperStrength: 2700
+    antiRoll: 9000
+    airUpright: 4
+    airAngularDamping: 1.5
+  geometry:
+    wheelNames:
+    - wheel-front-left
+    - wheel-front-right
+    - wheel-back-left
+    - wheel-back-right
+    caliperNames:
+    - caliper-front-left
+    - caliper-front-right
+    - caliper-back-left
+    - caliper-back-right
+    wheelCenters:
+    - {x: -0.84, y: 0.34, z: 1.32}
+    - {x: 0.84, y: 0.34, z: 1.32}
+    - {x: -0.84, y: 0.36, z: -1.32}
+    - {x: 0.84, y: 0.36, z: -1.32}
+    wheelRadii:
+    - 0.34
+    - 0.34
+    - 0.36
+    - 0.36
+    wheelBase: 2.64
+    frontTrack: 1.68
+    rearTrack: 1.68
+    centerOfMassZ: 0
+    colliderCenter: {x: 0, y: 0.7525, z: -0.0074999332}
+    colliderSize: {x: 2, y: 1.015, z: 4.5850005}
+    bodySize: {x: 2, y: 1.26, z: 4.5850005}
+  paints:
+  - id: Paint_Body
+    displayName: "G\xF6vde"
+    material: {fileID: 2100000, guid: 2a09970bbd4f8cd039ea1dfdf3d98803, type: 2}
+    defaultColor: {r: 0.11999995, g: 0.53999996, b: 0.26999995, a: 1}
+    emissionIntensity: 0
+  - id: Paint_Rim
+    displayName: Jant
+    material: {fileID: 2100000, guid: 9c681fb21b0bdd84b915375e3c0c2649, type: 2}
+    defaultColor: {r: 0.10999996, g: 0.11999995, b: 0.13999996, a: 1}
+    emissionIntensity: 0
+  - id: Paint_Caliper
+    displayName: Kaliper
+    material: {fileID: 2100000, guid: c07e80c4a7cac260a9b3fd45b553ac02, type: 2}
+    defaultColor: {r: 0.95, g: 0.72, b: 0.02, a: 1}
+    emissionIntensity: 0
+  - id: Paint_Accent
+    displayName: Detay
+    material: {fileID: 2100000, guid: 1db9a9da80e3cfc51a89c06b84ed449c, type: 2}
+    defaultColor: {r: 0.95, g: 0.72, b: 0.02, a: 1}
+    emissionIntensity: 0
+  - id: Neon
+    displayName: Neon
+    material: {fileID: 2100000, guid: c5b95268d4f4deb918fb4efcf0f1fc70, type: 2}
+    defaultColor: {r: 0, g: 0.95, b: 1, a: 1}
+    emissionIntensity: 2.2
+  - id: Glass_Tint
+    displayName: Cam filmi
+    material: {fileID: 2100000, guid: f7166b401bb377a9d9083b76ff4f599a, type: 2}
+    defaultColor: {r: 0.06999998, g: 0.11999995, b: 0.17999998, a: 0.42}
+    emissionIntensity: 0
+  slots:
+  - id: bumper_front
+    displayName: "\xD6n tampon"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_bumper_front_0_stock
+    - key: 1_street
+      displayName: Sokak
+      price: 0
+      objectNames:
+      - mod_bumper_front_1_street
+    - key: 2_race
+      displayName: "Yar\u0131\u015F"
+      price: 0
+      objectNames:
+      - mod_bumper_front_2_race
+    - key: 3_track
+      displayName: Pist
+      price: 0
+      objectNames:
+      - mod_bumper_front_3_track
+    - key: 4_timeattack
+      displayName: Time Attack
+      price: 0
+      objectNames:
+      - mod_bumper_front_4_timeattack
+  - id: bumper_rear
+    displayName: Arka tampon
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_bumper_rear_0_stock
+    - key: 1_street
+      displayName: Sokak
+      price: 0
+      objectNames:
+      - mod_bumper_rear_1_street
+    - key: 2_track
+      displayName: Pist
+      price: 0
+      objectNames:
+      - mod_bumper_rear_2_track
+    - key: 3_extreme
+      displayName: Extreme
+      price: 0
+      objectNames:
+      - mod_bumper_rear_3_extreme
+  - id: decal
+    displayName: "\xC7\u0131kartma"
+    kind: 2
+    variants:
+    - key: 0_none
+      displayName: Yok
+      price: 0
+      objectNames: []
+    - key: 1_center_stripes
+      displayName: "Orta \u015Feritler"
+      price: 0
+      objectNames:
+      - decal_1_center_stripes
+    - key: 2_side_rocker
+      displayName: "Yan \u015Ferit"
+      price: 0
+      objectNames:
+      - decal_2_side_rocker
+    - key: 3_number_plates
+      displayName: "Yar\u0131\u015F numaras\u0131"
+      price: 0
+      objectNames:
+      - decal_3_number_plates
+    - key: 4_side_slashes
+      displayName: "Yan \xE7izgiler"
+      price: 0
+      objectNames:
+      - decal_4_side_slashes
+    - key: 5_windshield_banner
+      displayName: "Cam band\u0131"
+      price: 0
+      objectNames:
+      - decal_5_windshield_banner
+  - id: exhaust
+    displayName: Egzoz
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_exhaust_0_stock
+    - key: 1_dual_titanium
+      displayName: Dual titanium
+      price: 0
+      objectNames:
+      - mod_exhaust_1_dual_titanium
+    - key: 2_center_race
+      displayName: Center race
+      price: 0
+      objectNames:
+      - mod_exhaust_2_center_race
+    - key: 3_quad_extreme
+      displayName: Quad extreme
+      price: 0
+      objectNames:
+      - mod_exhaust_3_quad_extreme
+  - id: fender
+    displayName: "\xC7amurluk"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_fender_0_stock
+    - key: 1_louvers
+      displayName: Panjurlu
+      price: 0
+      objectNames:
+      - mod_fender_1_louvers
+    - key: 2_widebody
+      displayName: "Geni\u015F kasa"
+      price: 0
+      objectNames:
+      - mod_fender_2_widebody
+  - id: frunk
+    displayName: "\xD6n bagaj"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_frunk_0_stock
+    - key: 1_custom_audio
+      displayName: Custom audio
+      price: 0
+      objectNames:
+      - mod_frunk_1_custom_audio
+  - id: headlight
+    displayName: Farlar
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_headlight_0_stock
+    - key: 1_amber
+      displayName: Amber
+      price: 0
+      objectNames:
+      - mod_headlight_1_amber
+    - key: 2_halo
+      displayName: Halka
+      price: 0
+      objectNames:
+      - mod_headlight_2_halo
+    - key: 3_rally
+      displayName: Ralli
+      price: 0
+      objectNames:
+      - mod_headlight_3_rally
+  - id: hood
+    displayName: Kaput
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_hood_0_stock
+    - key: 1_street
+      displayName: Sokak
+      price: 0
+      objectNames:
+      - mod_hood_1_street
+    - key: 2_vented
+      displayName: Vented
+      price: 0
+      objectNames:
+      - mod_hood_2_vented
+    - key: 3_track
+      displayName: Pist
+      price: 0
+      objectNames:
+      - mod_hood_3_track
+    - key: 4_carbon
+      displayName: Karbon
+      price: 0
+      objectNames:
+      - mod_hood_4_carbon
+  - id: interior_passenger
+    displayName: "Yolcu koltu\u011Fu"
+    kind: 0
+    variants:
+    - key: 0_seat
+      displayName: Koltuk
+      price: 0
+      objectNames:
+      - mod_interior_passenger_0_seat
+    - key: 1_twin_nos
+      displayName: Twin nos
+      price: 0
+      objectNames:
+      - mod_interior_passenger_1_twin_nos
+  - id: interior_pillar
+    displayName: "Direk g\xF6stergesi"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_interior_pillar_0_stock
+    - key: 1_triple_gauges
+      displayName: Triple gauges
+      price: 0
+      objectNames:
+      - mod_interior_pillar_1_triple_gauges
+  - id: mirror
+    displayName: Aynalar
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_mirror_0_stock
+    - key: 1_aero
+      displayName: Aero
+      price: 0
+      objectNames:
+      - mod_mirror_1_aero
+    - key: 2_carbon_f1
+      displayName: Carbon f1
+      price: 0
+      objectNames:
+      - mod_mirror_2_carbon_f1
+  - id: neon
+    displayName: Neon
+    kind: 0
+    variants:
+    - key: 0_none
+      displayName: Yok
+      price: 0
+      objectNames:
+      - mod_neon_0_none
+    - key: 1_sides
+      displayName: Yanlar
+      price: 0
+      objectNames:
+      - mod_neon_1_sides
+    - key: 2_full
+      displayName: Tam
+      price: 0
+      objectNames:
+      - mod_neon_2_full
+  - id: rim
+    displayName: Jantlar
+    kind: 1
+    variants:
+    - key: 0_sport
+      displayName: Spor
+      price: 0
+      objectNames:
+      - wheel-back-left_rim_0_sport
+      - wheel-back-right_rim_0_sport
+      - wheel-front-left_rim_0_sport
+      - wheel-front-right_rim_0_sport
+    - key: 1_5spoke
+      displayName: 5 kollu
+      price: 0
+      objectNames:
+      - wheel-back-left_rim_1_5spoke
+      - wheel-back-right_rim_1_5spoke
+      - wheel-front-left_rim_1_5spoke
+      - wheel-front-right_rim_1_5spoke
+    - key: 2_turbofan
+      displayName: "T\xFCrbin"
+      price: 0
+      objectNames:
+      - wheel-back-left_rim_2_turbofan
+      - wheel-back-right_rim_2_turbofan
+      - wheel-front-left_rim_2_turbofan
+      - wheel-front-right_rim_2_turbofan
+    - key: 3_mesh
+      displayName: "\xD6rg\xFC"
+      price: 0
+      objectNames:
+      - wheel-back-left_rim_3_mesh
+      - wheel-back-right_rim_3_mesh
+      - wheel-front-left_rim_3_mesh
+      - wheel-front-right_rim_3_mesh
+  - id: rollcage
+    displayName: Rollbar
+    kind: 0
+    variants:
+    - key: 0_none
+      displayName: Yok
+      price: 0
+      objectNames:
+      - mod_rollcage_0_none
+    - key: 1_street_half
+      displayName: Street half
+      price: 0
+      objectNames:
+      - mod_rollcage_1_street_half
+    - key: 2_full_fia
+      displayName: Full fia
+      price: 0
+      objectNames:
+      - mod_rollcage_2_full_fia
+  - id: roof_scoop
+    displayName: "Tavan hava giri\u015Fi"
+    kind: 0
+    variants:
+    - key: 0_none
+      displayName: Yok
+      price: 0
+      objectNames:
+      - mod_roof_scoop_0_none
+    - key: 1_single
+      displayName: Tekli
+      price: 0
+      objectNames:
+      - mod_roof_scoop_1_single
+    - key: 2_dual
+      displayName: Dual
+      price: 0
+      objectNames:
+      - mod_roof_scoop_2_dual
+    - key: 3_race
+      displayName: "Yar\u0131\u015F"
+      price: 0
+      objectNames:
+      - mod_roof_scoop_3_race
+  - id: skirts
+    displayName: "Mar\u015Fpiyel"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_skirts_0_stock_left
+      - mod_skirts_0_stock_right
+    - key: 1_street
+      displayName: Sokak
+      price: 0
+      objectNames:
+      - mod_skirts_1_street_left
+      - mod_skirts_1_street_right
+    - key: 2_aero
+      displayName: Aero
+      price: 0
+      objectNames:
+      - mod_skirts_2_aero_left
+      - mod_skirts_2_aero_right
+    - key: 3_wide
+      displayName: "Geni\u015F"
+      price: 0
+      objectNames:
+      - mod_skirts_3_wide_left
+      - mod_skirts_3_wide_right
+  - id: spoiler
+    displayName: "R\xFCzg\xE2rl\u0131k"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_spoiler_0_stock
+    - key: 1_ducktail
+      displayName: "\xD6rdek kuyru\u011Fu"
+      price: 0
+      objectNames:
+      - mod_spoiler_1_ducktail
+    - key: 2_street
+      displayName: Sokak
+      price: 0
+      objectNames:
+      - mod_spoiler_2_street
+    - key: 3_trackwing
+      displayName: Trackwing
+      price: 0
+      objectNames:
+      - mod_spoiler_3_trackwing
+    - key: 4_swanneck
+      displayName: "Ku\u011Fu boynu"
+      price: 0
+      objectNames:
+      - mod_spoiler_4_swanneck
+    - key: 5_timeattack
+      displayName: Time Attack
+      price: 0
+      objectNames:
+      - mod_spoiler_5_timeattack
+  - id: steering
+    displayName: Direksiyon
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_steering_0_stock
+    - key: 1_deep_dish
+      displayName: Deep dish
+      price: 0
+      objectNames:
+      - mod_steering_1_deep_dish
+    - key: 2_track_yoke
+      displayName: Track yoke
+      price: 0
+      objectNames:
+      - mod_steering_2_track_yoke
+  - id: taillight
+    displayName: "Stop lambalar\u0131"
+    kind: 0
+    variants:
+    - key: 0_stock
+      displayName: Standart
+      price: 0
+      objectNames:
+      - mod_taillight_0_stock
+    - key: 1_led_bar
+      displayName: Led bar
+      price: 0
+      objectNames:
+      - mod_taillight_1_led_bar
+    - key: 2_smoked_quad
+      displayName: Smoked quad
+      price: 0
+      objectNames:
+      - mod_taillight_2_smoked_quad
+  - id: tire_lettering
+    displayName: "Lastik yaz\u0131s\u0131"
+    kind: 3
+    variants:
+    - key: 0_off
+      displayName: "Kapal\u0131"
+      price: 0
+      objectNames: []
+    - key: 1_on
+      displayName: "A\xE7\u0131k"
+      price: 0
+      objectNames:
+      - wheel-back-left_tire_lettering
+      - wheel-back-right_tire_lettering
+      - wheel-front-left_tire_lettering
+      - wheel-front-right_tire_lettering
+  upgrades:
+  - type: 0
+    displayName: Motor
+    levels:
+    - displayName: Sokak
+      price: 1000
+      modifiers:
+      - stat: 0
+        multiply: 1
+        value: 1.03
+      - stat: 1
+        multiply: 1
+        value: 1.05
+    - displayName: Spor
+      price: 2500
+      modifiers:
+      - stat: 0
+        multiply: 1
+        value: 1.06
+      - stat: 1
+        multiply: 1
+        value: 1.1
+    - displayName: "Yar\u0131\u015F"
+      price: 5000
+      modifiers:
+      - stat: 0
+        multiply: 1
+        value: 1.1
+      - stat: 1
+        multiply: 1
+        value: 1.16
+  - type: 1
+    displayName: "\u015Eanz\u0131man"
+    levels:
+    - displayName: Sokak
+      price: 800
+      modifiers:
+      - stat: 1
+        multiply: 1
+        value: 1.04
+      - stat: 4
+        multiply: 1
+        value: 1.05
+    - displayName: Spor
+      price: 2000
+      modifiers:
+      - stat: 1
+        multiply: 1
+        value: 1.08
+      - stat: 0
+        multiply: 1
+        value: 1.02
+      - stat: 4
+        multiply: 1
+        value: 1.1
+    - displayName: "Yar\u0131\u015F"
+      price: 4000
+      modifiers:
+      - stat: 1
+        multiply: 1
+        value: 1.12
+      - stat: 0
+        multiply: 1
+        value: 1.04
+      - stat: 4
+        multiply: 1
+        value: 1.15
+  - type: 2
+    displayName: Lastik
+    levels:
+    - displayName: Sokak
+      price: 700
+      modifiers:
+      - stat: 14
+        multiply: 1
+        value: 1.04
+      - stat: 15
+        multiply: 1
+        value: 1.04
+      - stat: 16
+        multiply: 0
+        value: 0.05
+      - stat: 13
+        multiply: 0
+        value: 0.5
+    - displayName: Spor
+      price: 1800
+      modifiers:
+      - stat: 14
+        multiply: 1
+        value: 1.08
+      - stat: 15
+        multiply: 1
+        value: 1.08
+      - stat: 16
+        multiply: 0
+        value: 0.1
+      - stat: 13
+        multiply: 0
+        value: 1
+    - displayName: "Yar\u0131\u015F"
+      price: 3500
+      modifiers:
+      - stat: 14
+        multiply: 1
+        value: 1.12
+      - stat: 15
+        multiply: 1
+        value: 1.12
+      - stat: 16
+        multiply: 0
+        value: 0.15
+      - stat: 13
+        multiply: 0
+        value: 1.5
+  - type: 3
+    displayName: Fren
+    levels:
+    - displayName: Sokak
+      price: 600
+      modifiers:
+      - stat: 2
+        multiply: 1
+        value: 1.08
+    - displayName: Spor
+      price: 1500
+      modifiers:
+      - stat: 2
+        multiply: 1
+        value: 1.16
+      - stat: 6
+        multiply: 1
+        value: 1.1
+    - displayName: "Yar\u0131\u015F"
+      price: 3000
+      modifiers:
+      - stat: 2
+        multiply: 1
+        value: 1.25
+      - stat: 6
+        multiply: 1
+        value: 1.2
+  - type: 4
+    displayName: "S\xFCspansiyon"
+    levels:
+    - displayName: Sokak
+      price: 800
+      modifiers:
+      - stat: 26
+        multiply: 1
+        value: 1.1
+      - stat: 21
+        multiply: 0
+        value: -0.02
+    - displayName: Spor
+      price: 2000
+      modifiers:
+      - stat: 26
+        multiply: 1
+        value: 1.2
+      - stat: 21
+        multiply: 0
+        value: -0.04
+      - stat: 24
+        multiply: 1
+        value: 1.05
+      - stat: 25
+        multiply: 1
+        value: 1.05
+    - displayName: "Yar\u0131\u015F"
+      price: 4000
+      modifiers:
+      - stat: 26
+        multiply: 1
+        value: 1.3
+      - stat: 21
+        multiply: 0
+        value: -0.06
+      - stat: 24
+        multiply: 1
+        value: 1.1
+      - stat: 25
+        multiply: 1
+        value: 1.1
+      - stat: 12
+        multiply: 0
+        value: 0.5
+  - type: 5
+    displayName: "A\u011F\u0131rl\u0131k azaltma"
+    levels:
+    - displayName: Sokak
+      price: 900
+      modifiers:
+      - stat: 20
+        multiply: 1
+        value: 0.96
+      - stat: 24
+        multiply: 1
+        value: 0.96
+      - stat: 25
+        multiply: 1
+        value: 0.98
+      - stat: 1
+        multiply: 1
+        value: 1.02
+    - displayName: Spor
+      price: 2200
+      modifiers:
+      - stat: 20
+        multiply: 1
+        value: 0.92
+      - stat: 24
+        multiply: 1
+        value: 0.92
+      - stat: 25
+        multiply: 1
+        value: 0.96
+      - stat: 1
+        multiply: 1
+        value: 1.04
+    - displayName: "Yar\u0131\u015F"
+      price: 4500
+      modifiers:
+      - stat: 20
+        multiply: 1
+        value: 0.88
+      - stat: 24
+        multiply: 1
+        value: 0.88
+      - stat: 25
+        multiply: 1
+        value: 0.94
+      - stat: 1
+        multiply: 1
+        value: 1.06

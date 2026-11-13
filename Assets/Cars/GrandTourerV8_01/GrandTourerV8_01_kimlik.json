@@ -1,0 +1,31 @@
+{
+  "id": "GrandTourerV8_01",
+  "ad_tr": "V8 Uzun Kaput Grand Tourer",
+  "sinif": "grandtourer",
+  "ilham": "Ön-orta motorlu uzun kaputlu V8 pist/yol grand tourer kupalar (özgün tasarım)",
+  "boyut_m": {
+    "boy": 4.594,
+    "en": 2.000,
+    "yukseklik": 1.260,
+    "dingil": 2.640
+  },
+  "tekerlek": {
+    "on_yaricap": 0.340,
+    "on_genislik": 0.280,
+    "arka_yaricap": 0.360,
+    "arka_genislik": 0.320
+  },
+  "ozellikler": [
+    "Uzun çift güç kubbeli (power-dome) V8 kaput ve geriye çekilmiş fastback kabin (cab-backward)",
+    "Öne eğimli köpekbalığı burun (shark-nose) ve dikey çıtalı geniş trapez ön ızgara",
+    "Ön çamurluk arkasında karbon yan solungaç yarığı ve yatay kanatçık (side-strake breather)",
+    "Yuvarlatılmış fastback arka güverte, ince yatay çift şeritli stop lambaları ve derin difüzör",
+    "Tam kapsamlı 17 modifiye slotu, 4 jant stili ve 5 çıkartma katmanı"
+  ],
+  "varsayilan_renkler": {
+    "Paint_Body": "#1E8A44",
+    "Paint_Accent": "#F2B705",
+    "Paint_Caliper": "#F2B705",
+    "Paint_Rim": "#1C1E22"
+  }
+}

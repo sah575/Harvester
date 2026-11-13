@@ -15,23 +15,32 @@ public static class SupercarGarageBuilder
     static readonly Regex Rim = new Regex(@"^wheel-.+_rim_(\d+)_");
 
     [MenuItem("Harvester/Arayüz/Supercar V10'u Garaja Ekle")]
-    public static void Build()
+    public static void Build() { Integrate(Id,"V10 Orta Motor Süper Spor",8000); }
+
+    [MenuItem("Harvester/Arayüz/Grand Tourer V8'i Garaja Ekle")]
+    public static void BuildGrandTourer() { Integrate("GrandTourerV8_01","V8 Uzun Kaput",10000); }
+
+    [MenuItem("Harvester/Arayüz/Muscle Fastback'i Garaja Ekle")]
+    public static void BuildMuscle() { Integrate("MuscleFastback_01","V8 Kaslı Fastback",9000); }
+
+    public static void Integrate(string id,string displayName,int price)
     {
+        string folder="Assets/Cars/"+id+"/";
         if (EditorApplication.isPlayingOrWillChangePlaymode)
         {
             Debug.LogError("Araç entegrasyonu için önce oynatma modundan çık.");
             return;
         }
-        var importer = AssetImporter.GetAtPath(Folder + Id + ".fbx") as ModelImporter;
+        var importer = AssetImporter.GetAtPath(folder + id + ".fbx") as ModelImporter;
         if (importer == null) throw new InvalidOperationException("Supercar V10 FBX modeli bulunamadı.");
         // CarVisual'ın mesh birleştirmesi çalışma zamanında mesh verisini okur.
         if (!importer.isReadable) { importer.isReadable = true; importer.SaveAndReimport(); }
-        var model = AssetDatabase.LoadAssetAtPath<GameObject>(Folder + Id + ".fbx");
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(folder + id + ".fbx");
         var preview = EditorSceneManager.NewPreviewScene();
         try
         {
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(model, preview);
-            instance.name = Id;
+            instance.name = id;
             foreach (var t in instance.GetComponentsInChildren<Transform>(true))
             {
                 var match = Part.Match(t.name);
@@ -40,29 +49,29 @@ public static class SupercarGarageBuilder
                 else if (t.name.StartsWith("decal_", StringComparison.Ordinal) || t.name.EndsWith("_tire_lettering", StringComparison.Ordinal))
                     t.gameObject.SetActive(false);
             }
-            PrefabUtility.SaveAsPrefabAsset(instance, Folder + Id + ".prefab");
+            PrefabUtility.SaveAsPrefabAsset(instance, folder + id + ".prefab");
         }
         finally { EditorSceneManager.ClosePreviewScene(preview); }
 
-        bool created = AssetDatabase.LoadAssetAtPath<CarDefinition>(Folder + Id + "_Tanim.asset") == null;
-        var definition = CarBuilder.EnsureDefinition(Id);
+        bool created = AssetDatabase.LoadAssetAtPath<CarDefinition>(folder + id + "_Tanim.asset") == null;
+        var definition = CarBuilder.EnsureDefinition(id);
         if (definition == null) throw new InvalidOperationException("Supercar V10 tanımı oluşturulamadı.");
         if (created)
         {
-            definition.displayName = "V10 Orta Motor Süper Spor";
-            definition.price = 8000;
+            definition.displayName = displayName;
+            definition.price = price;
         }
         EditorUtility.SetDirty(definition);
         AssetDatabase.SaveAssetIfDirty(definition);
         var registry = MenuCarRegistryBuilder.RefreshRegistry();
         // Var olan ağ kataloğu varsa sırası korunur; yeni araç yalnızca sona eklenir.
-        if (registry.catalog != null && registry.catalog.IndexOf(Id) < 0)
+        if (registry.catalog != null && registry.catalog.IndexOf(id) < 0)
         {
             if (registry.catalog.Count >= 256) throw new InvalidOperationException("Araç kataloğu dolu.");
             registry.catalog.cars.Add(definition);
             EditorUtility.SetDirty(registry.catalog);
             AssetDatabase.SaveAssetIfDirty(registry.catalog);
         }
-        Debug.Log("Supercar V10 garaja eklendi: " + definition.slots.Count + " parça yuvası, " + definition.paints.Count + " boya yuvası, " + definition.upgrades.Count + " geliştirme kategorisi.");
+        Debug.Log("Araç garaja eklendi: " + definition.slots.Count + " parça yuvası, " + definition.paints.Count + " boya yuvası, " + definition.upgrades.Count + " geliştirme kategorisi.");
     }
 }

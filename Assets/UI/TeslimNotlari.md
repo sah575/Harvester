@@ -1,5 +1,7 @@
 # Yarış dışı arayüz teslimi
 
+**Güncel garaj ve galeri tasarımı:** [Atölye tasarımı ve doğrulamalar](AtolyeTasarimi.md). Aşağıdaki ekran görüntüleri ilk teslimi belgeler.
+
 13 Kasım 2026. Dal: `ui-menus`. Lobby sahnesi `Harvester/Rebuild Lobby UI` ile yeniden üretildi ve kaydedildi. Ana menü, bağlantı, oda, garaj, mağaza ve ayarlar aynı sahnede panel olarak çalışır.
 
 ## Kullanım
