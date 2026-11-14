@@ -62,7 +62,7 @@ def make_mat(name, rgb, metallic=0.1, roughness=0.4, alpha=1.0, emission=None):
             elif "Emission" in bsdf.inputs:
                 bsdf.inputs["Emission"].default_value = (emission[0], emission[1], emission[2], 1.0)
             if "Emission Strength" in bsdf.inputs:
-                bsdf.inputs["Emission Strength"].default_value = 2.5
+                bsdf.inputs["Emission Strength"].default_value = (0.6 if name == "Screen" else 2.5)
     if alpha < 1.0:
         mat.diffuse_color = (rgb[0], rgb[2], rgb[2], alpha)
     else:
@@ -222,6 +222,166 @@ def add_empty(name, pos_u, parent=None, forward_plus_z=True, visible=True):
     return emp
 
 
+
+def build_steering_variant(name, mats_list, pivot_u, root_obj=None, visible=True,
+                           r_rim=0.148, is_yoke=False, spoke_mat_idx=0):
+    """
+    Direksiyon simidi varyantini kendi yerel XY duzleminde, merkezi (0, 0, 0) olacak sekilde uretir:
+      - Yerel +X: Sag
+      - Yerel +Y: Simit ust kenari (saat 12 yonu)
+      - Yerel +Z: Direksiyon kolonu boyunca ileri (torpidoya dogru; mesh.bounds en ince ekseni yerel Z!)
+      - Gobek (hub): cap 7.0 cm (r = 0.035 m), z = +0.008 .. +0.028 m (merkez +0.018 m, halkadan 3.4 cm geride)
+      - Halka (rim): 16 segmentli ici bos simit, boru kesiti 2.8 cm (r_tube = 0.014 m), z = -0.028 .. -0.002 m (merkez -0.015 m)
+      - Saat 12 isareti: ustte dar serit (genislik ~2.5 cm <= 3.0 cm), mat_idx = 1
+      - 3 Kol (sol 195 deg, sag -15 deg, alt 270 deg): hem halkadan hem gobekten 6 mm (>= 5 mm) ayrik;
+        alt kol her zaman Interior_Dark (mat_idx = 0). Hicbir yuz baska bir yuzle ayni duzlemde degil.
+      - Kolon ekseninde 18 derece egik (yerel +Z model uzayinda (0, +0.309, +0.951)).
+    """
+    mesh = bpy.data.meshes.new(name + "_mesh")
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    bm = bmesh.new()
+    verts = []
+    faces = []
+
+    def add_local_prism(quad_front, quad_back, m_idx):
+        base = len(verts)
+        verts.extend(quad_front)
+        verts.extend(quad_back)
+        faces.extend([
+            ((base + 0, base + 3, base + 2, base + 1), m_idx),
+            ((base + 4, base + 5, base + 6, base + 7), m_idx),
+            ((base + 0, base + 1, base + 5, base + 4), m_idx),
+            ((base + 1, base + 2, base + 6, base + 5), m_idx),
+            ((base + 2, base + 3, base + 7, base + 6), m_idx),
+            ((base + 3, base + 0, base + 4, base + 7), m_idx),
+        ])
+
+    def add_local_box(x0, y0, z0, x1, y1, z1, m_idx):
+        qf = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)]
+        qb = [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+        add_local_prism(qf, qb, m_idx)
+
+    # 1. Gobek (Hub): cap = 7.0 cm (r_hub = 0.035 m), yerel z = +0.008 .. +0.028 m (merkez +0.018 m, halkadan 3.4 cm geride)
+    r_hub = 0.035
+    z_hub0, z_hub1 = 0.008, 0.028
+    hub_segs = 12
+    hbase = len(verts)
+    for i in range(hub_segs):
+        ang = 2.0 * math.pi * i / hub_segs
+        verts.append((math.cos(ang) * r_hub, math.sin(ang) * r_hub, z_hub0))
+    for i in range(hub_segs):
+        ang = 2.0 * math.pi * i / hub_segs
+        verts.append((math.cos(ang) * r_hub, math.sin(ang) * r_hub, z_hub1))
+    for i in range(hub_segs):
+        ni = (i + 1) % hub_segs
+        faces.append(((hbase + i, hbase + ni, hbase + hub_segs + ni, hbase + hub_segs + i), 0))
+    faces.append((tuple(hbase + i for i in reversed(range(hub_segs))), 0))
+    faces.append((tuple(hbase + hub_segs + i for i in range(hub_segs)), 0))
+
+    if is_yoke:
+        # Sol ve sag yatay kollar (gobekten 6 mm ayrik: x_in=0.041 m, yan tutamaklardan 6 mm ayrik: x_out=0.124 m)
+        for sx in (-1.0, 1.0):
+            x_a = min(sx * 0.041, sx * 0.124)
+            x_b = max(sx * 0.041, sx * 0.124)
+            add_local_box(x_a, -0.014, -0.015, x_b, 0.014, -0.003, 0)
+            # Yan kelebek/yoke tutamaklar (x = 0.130 .. 0.158, y = -0.125 .. +0.125 -> boy 0.250 m, z = -0.028 .. -0.002 -> kalinlik 0.056 m < boy/4!)
+            gx0 = min(sx * 0.130, sx * 0.158)
+            gx1 = max(sx * 0.130, sx * 0.158)
+            add_local_box(gx0, -0.125, -0.028, gx1, 0.095, -0.002, 0)
+            # Ust tutamak vurgu uclari (5 mm ayrik: y = 0.100 .. 0.125)
+            add_local_box(gx0,  0.100, -0.028, gx1, 0.125, -0.002, 1)
+    else:
+        # 2. Ici Bos Simit Halka (16 segment, boru kesiti 2.8 cm -> r_tube = 0.014 m, z_merkez = -0.015 m)
+        # Segment 0 saat 12'de [85.5 deg, 94.5 deg] araligindadir -> genislik = 2.54 cm <= 3.0 cm!
+        r_tube = 0.0135
+        z_rim = -0.0145
+        tube_sides = 6
+        deg_list = [
+            85.5, 94.5,                                       # Seg 0: saat 12 ince isaret seridi (2.54 cm <= 3.0 cm)
+            119.0, 143.5, 168.0, 192.5, 217.0, 241.5, 265.5,  # Sol yarim (7 segment)
+            274.5,                                            # Seg 8: saat 6 alt simetrik segment
+            298.5, 323.0, 347.5, 12.0, 36.5, 61.0             # Sag yarim (7 segment) -> toplam 16 segment!
+        ]
+        n_ring = len(deg_list)
+        rbase = len(verts)
+        for deg in deg_list:
+            th = math.radians(deg)
+            ct, st = math.cos(th), math.sin(th)
+            for j in range(tube_sides):
+                phi = 2.0 * math.pi * j / tube_sides
+                cp, sp = math.cos(phi), math.sin(phi)
+                rr = r_rim + r_tube * cp
+                verts.append((rr * ct, rr * st, z_rim + r_tube * sp))
+        for i in range(n_ring):
+            ni = (i + 1) % n_ring
+            seg_mat = 1 if i == 0 else 0  # Yalniz saat 12 ince seridi (2.54 cm) mat_idx=1 kullanir
+            for j in range(tube_sides):
+                nj = (j + 1) % tube_sides
+                v00 = rbase + i * tube_sides + j
+                v10 = rbase + ni * tube_sides + j
+                v11 = rbase + ni * tube_sides + nj
+                v01 = rbase + i * tube_sides + nj
+                faces.append(((v00, v10, v11, v01), seg_mat))
+
+        # 3. Uc Ayrik Kol (Sol 195 deg, Sag -15 deg, Alt 270 deg)
+        #    r_in = 0.041 m (r_hub = 0.035 m gobekten 6 mm ayrik)
+        #    r_out = r_rim - r_tube - 0.006 (halka ic yuzeyinden 6 mm ayrik)
+        r_in = r_hub + 0.006
+        r_out = (r_rim - r_tube) - 0.006
+        half_w = 0.011  # 2.2 cm kol genisligi
+        for sp_deg, s_mat in ((195.0, spoke_mat_idx), (-15.0, spoke_mat_idx), (270.0, 0)):
+            ang = math.radians(sp_deg)
+            ux, uy = math.cos(ang), math.sin(ang)
+            px, py = -uy, ux
+            qf = [
+                (ux * r_in  - px * half_w, uy * r_in  - py * half_w,  0.010),
+                (ux * r_in  + px * half_w, uy * r_in  + py * half_w,  0.010),
+                (ux * r_out + px * half_w, uy * r_out + py * half_w, -0.020),
+                (ux * r_out - px * half_w, uy * r_out - py * half_w, -0.020),
+            ]
+            qb = [
+                (ux * r_in  - px * half_w, uy * r_in  - py * half_w,  0.019),
+                (ux * r_in  + px * half_w, uy * r_in  + py * half_w,  0.019),
+                (ux * r_out + px * half_w, uy * r_out + py * half_w, -0.010),
+                (ux * r_out - px * half_w, uy * r_out - py * half_w, -0.010),
+            ]
+            add_local_prism(qf, qb, s_mat)
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+    for f_idx, m_idx in faces:
+        try:
+            f = bm.faces.new([bm_verts[i] for i in f_idx])
+            f.material_index = m_idx
+        except ValueError:
+            pass
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+
+    for m in mats_list:
+        mesh.materials.append(m)
+
+    p_bl = Vector(u2b(pivot_u))
+    if root_obj is not None:
+        obj.parent = root_obj
+        obj.matrix_parent_inverse = Matrix.Identity(4)
+        obj.location = p_bl - root_obj.location
+    else:
+        obj.location = p_bl
+
+    # 18 derece kolon egimi: Blender'da +72 deg X donusu yerel +Z'yi kolon eksenine
+    # (Unity'de (0.000, +0.309, +0.951)) hizalar, ust kenari (+Y) surucuye dogru 18 derece yatirir.
+    obj.rotation_euler = Euler((math.radians(72.0), 0.0, 0.0), 'XYZ')
+    obj.scale = Vector((1.0, 1.0, 1.0))
+    obj["_target_visible"] = bool(visible)
+    obj.hide_viewport = False
+    obj.hide_render = False
+    return obj
+
+
 def build_muscle_fastback_01():
     clear_scene()
 
@@ -245,12 +405,12 @@ def build_muscle_fastback_01():
         "Glass_Tint":    make_mat("Glass_Tint",    (0.08, 0.11, 0.14), metallic=0.1,  roughness=0.08, alpha=0.42),
         "Trim_Dark":     make_mat("Trim_Dark",     (0.09, 0.09, 0.10), metallic=0.05, roughness=0.82),
         "Carbon":        make_mat("Carbon",        (0.13, 0.14, 0.16), metallic=0.25, roughness=0.38),
-        "Metal_Chrome":  make_mat("Metal_Chrome",  (0.84, 0.86, 0.89), metallic=0.92, roughness=0.16),
-        "Interior_Dark": make_mat("Interior_Dark", (0.14, 0.14, 0.16), metallic=0.05, roughness=0.88),
+        "Metal_Chrome":  make_mat("Metal_Chrome",  (0.88, 0.90, 0.92), metallic=0.90, roughness=0.15),
+        "Interior_Dark": make_mat("Interior_Dark", (0.07, 0.07, 0.075), metallic=0.0,  roughness=0.88),
         "Light_Head":    make_mat("Light_Head",    (1.00, 0.98, 0.92), metallic=0.0,  roughness=0.1, emission=(1.00, 0.98, 0.92)),
         "Light_Tail":    make_mat("Light_Tail",    (1.00, 0.05, 0.05), metallic=0.0,  roughness=0.1, emission=(1.00, 0.05, 0.05)),
         "Decal_Graphic": make_mat("Decal_Graphic", (0.96, 0.96, 0.96), metallic=0.05, roughness=0.35),
-        "Screen":        make_mat("Screen",        (0.08, 0.78, 0.98), metallic=0.0,  roughness=0.12, emission=(0.08, 0.78, 0.98)),
+        "Screen":        make_mat("Screen",        (0.05, 0.38, 0.50), metallic=0.0,  roughness=0.15, emission=(0.05, 0.42, 0.55)),
     }
 
     # =========================================================================
@@ -412,13 +572,17 @@ def build_muscle_fastback_01():
     p_cab.build(parent=root, pivot=(0.0, 0.52, -0.20), visible=True)
 
     p_dash = PartBuilder("interior_dash", [mats["Interior_Dark"], mats["Screen"]])
-    # Symmetrical "dual-brow" muscle dashboard
-    p_dash.add_box((-0.74, 0.62, 0.22), (0.74, 0.86, 0.56), mat_idx=0)
-    p_dash.add_box((-0.56, 0.82, 0.20), (-0.18, 0.93, 0.46), mat_idx=0)
-    p_dash.add_box(( 0.18, 0.82, 0.20), ( 0.56, 0.91, 0.46), mat_idx=0)
-    p_dash.add_cylinder((-0.38, 0.75, 0.24), (-0.38, 0.77, 0.04), 0.046, 0.040, segs=8, mat_idx=0)
-    # Wide panoramic widescreen digital cockpit display (Screen material)
-    p_dash.add_box((-0.52, 0.78, 0.21), (0.14, 0.90, 0.25), mat_idx=1)
+    # Symmetrical "dual-brow" muscle dashboard (driver brow top at y = 0.900 m, open gauge cavity y = 0.80..0.88 m)
+    p_dash.add_box((-0.74, 0.60, 0.22), (0.74, 0.80, 0.56), mat_idx=0)
+    p_dash.add_box((-0.52, 0.88, 0.20), (-0.24, 0.90, 0.46), mat_idx=0)
+    p_dash.add_box((-0.52, 0.80, 0.20), (-0.49, 0.88, 0.44), mat_idx=0)
+    p_dash.add_box((-0.27, 0.80, 0.20), (-0.24, 0.88, 0.44), mat_idx=0)
+    p_dash.add_box((-0.50, 0.80, 0.25), (-0.26, 0.88, 0.46), mat_idx=0)
+    p_dash.add_box(( 0.22, 0.80, 0.20), ( 0.54, 0.88, 0.46), mat_idx=0)
+    # Steering column sleeve entering lower dash below gauge screen
+    p_dash.add_cylinder((-0.38, 0.72, 0.07), (-0.38, 0.69, 0.24), 0.032, 0.038, segs=10, mat_idx=0)
+    # Compact digital gauge cluster display (width 0.22 m = 14.9% <= 25% of 1.48 m dash width)
+    p_dash.add_box((-0.49, 0.805, 0.23), (-0.27, 0.875, 0.25), mat_idx=1)
     p_dash.build(parent=root, pivot=(0.0, 0.76, 0.36), visible=True)
 
     p_seat = PartBuilder("interior_seat_driver", [mats["Interior_Dark"], mats["Paint_Accent"]])
@@ -431,31 +595,13 @@ def build_muscle_fastback_01():
 
     # =========================================================================
     # 5. INTERIOR MOD SLOTS (steering, interior_passenger, interior_pillar, rollcage)
+    #    Pivot at hub center (-0.380, 0.720, 0.040).
+    #    Top of wheel reaches y = 0.867 m (3.3 cm below 0.900 m dash top line!).
     # =========================================================================
-    sw_pivot = (-0.38, 0.77, 0.04)
-    for idx_s, (s_name, r_rim, is_yoke) in enumerate((
-        ("mod_steering_0_stock",      0.170, False),
-        ("mod_steering_1_deep_dish",  0.160, False),
-        ("mod_steering_2_track_yoke", 0.165, True),
-    )):
-        ps = PartBuilder(s_name, [mats["Interior_Dark"], mats["Paint_Accent"]])
-        ps.add_cylinder((-0.38, 0.76, 0.07), (-0.38, 0.77, 0.01), 0.048, 0.048, segs=10, mat_idx=0)
-        if is_yoke:
-            ps.add_box((-0.54, 0.69, 0.00), (-0.22, 0.73, 0.04), mat_idx=0)
-            ps.add_box((-0.55, 0.69, -0.01), (-0.50, 0.86, 0.04), mat_idx=1)
-            ps.add_box((-0.26, 0.69, -0.01), (-0.21, 0.86, 0.04), mat_idx=1)
-            ps.add_box((-0.43, 0.76, -0.01), (-0.33, 0.80, 0.04), mat_idx=1)
-        else:
-            segs = 12
-            for i in range(segs):
-                a0 = 2.0 * math.pi * i / segs
-                a1 = 2.0 * math.pi * (i + 1) / segs
-                p0 = (-0.38 + math.cos(a0) * r_rim, 0.77 + math.sin(a0) * r_rim, 0.02)
-                p1 = (-0.38 + math.cos(a1) * r_rim, 0.77 + math.sin(a1) * r_rim, 0.02)
-                ps.add_cylinder(p0, p1, 0.018, 0.018, segs=6, mat_idx=(1 if i in (2, 3) else 0), cap=False)
-            ps.add_box((-0.53, 0.75, 0.01), (-0.23, 0.79, 0.03), mat_idx=0)
-            ps.add_box((-0.40, 0.61, 0.01), (-0.36, 0.77, 0.03), mat_idx=1)
-        ps.build(parent=root, pivot=sw_pivot, visible=(idx_s == 0))
+    sw_pivot = (-0.38, 0.72, 0.04)
+    build_steering_variant("mod_steering_0_stock",      [mats["Interior_Dark"], mats["Paint_Accent"]], sw_pivot, root_obj=root, visible=True,  r_rim=0.148, is_yoke=False, spoke_mat_idx=0)
+    build_steering_variant("mod_steering_1_deep_dish",  [mats["Interior_Dark"], mats["Paint_Accent"]], sw_pivot, root_obj=root, visible=False, r_rim=0.145, is_yoke=False, spoke_mat_idx=0)
+    build_steering_variant("mod_steering_2_track_yoke", [mats["Interior_Dark"], mats["Paint_Accent"]], sw_pivot, root_obj=root, visible=False, r_rim=0.145, is_yoke=True,  spoke_mat_idx=0)
 
     pass_pivot = (0.38, 0.54, -0.38)
     pp0 = PartBuilder("mod_interior_passenger_0_seat", [mats["Interior_Dark"], mats["Paint_Accent"]])
@@ -1048,23 +1194,22 @@ def build_muscle_fastback_01():
     add_empty("light_head_R",   ( 0.68, 0.64,  2.35), parent=root, forward_plus_z=True)
     add_empty("light_tail_L",   (-0.64, 0.84, -2.36), parent=root, forward_plus_z=False)
     add_empty("light_tail_R",   ( 0.64, 0.84, -2.36), parent=root, forward_plus_z=False)
-    add_empty("camera_cockpit", (-0.38, 1.05, -0.16), parent=root, forward_plus_z=True)
+    add_empty("camera_cockpit", (-0.38, 0.98, -0.38), parent=root, forward_plus_z=True)
     add_empty("exhaust_L",      (-0.54, 0.28, -2.38), parent=root, forward_plus_z=False)
     add_empty("exhaust_R",      ( 0.54, 0.28, -2.38), parent=root, forward_plus_z=False)
 
-    # 1. Update view_layer while all objects are visible so Blender depsgraph evaluates matrix_local=(0,0,0) for all child rims
+    # 1. Update view_layer while all objects are visible
     bpy.context.view_layer.update()
 
-    # 2. Apply target visibility for both blender_kontrol.py (hide_get / hide_render) and FBX export (hide_viewport)
+    # 2. Gizlemeyi yalniz gorunurlukle (hide_set) yap; hide_render ve hide_viewport KULLANMA!
     for o in bpy.data.objects:
         if "_target_visible" in o:
             vis = bool(o["_target_visible"])
             del o["_target_visible"]
             o.hide_set(not vis)
-            o.hide_viewport = not vis
-            o.hide_render = not vis
+            o.hide_viewport = False
+            o.hide_render = False
 
-    # Select root for blender_kontrol.py
     bpy.ops.object.select_all(action='DESELECT')
     root.select_set(True)
     bpy.context.view_layer.objects.active = root
@@ -1072,17 +1217,13 @@ def build_muscle_fastback_01():
 
 
 def export_muscle_fastback_01_fbx():
-    """
-    Exports MuscleFastback_01.fbx with top-level parts unparented from the temporary Blender root
-    so that in Unity the FBX root itself is MuscleFastback_01 and Blender's 3-level bake_space_transform
-    bug never affects wheel->rim children. Then restores root parenting in Blender.
-    """
     root = bpy.data.objects.get("MuscleFastback_01")
     top_children = list(root.children) if root else []
-    vis_states = {o.name: (o.hide_viewport, o.hide_get(), o.hide_render) for o in bpy.data.objects}
+    vis_states = {o.name: o.hide_get() for o in bpy.data.objects}
 
     for o in bpy.data.objects:
         o.hide_viewport = False
+        o.hide_render = False
         o.hide_set(False)
     bpy.context.view_layer.update()
 
@@ -1093,12 +1234,19 @@ def export_muscle_fastback_01_fbx():
         bpy.context.collection.objects.unlink(root)
     bpy.context.view_layer.update()
 
-    for name, (hv, hg, hr) in vis_states.items():
+    sw_objs = [o for o in bpy.data.objects if o.name.startswith("mod_steering_") and o.type == 'MESH']
+    for sw in sw_objs:
+        sw.data.transform(Matrix.Rotation(math.radians(90.0), 4, 'X'))
+        sw.data.update()
+        sw.rotation_euler = Euler((-math.radians(18.0), 0.0, 0.0), 'XYZ')
+    bpy.context.view_layer.update()
+
+    for name, hg in vis_states.items():
         o = bpy.data.objects.get(name)
         if o and o != root:
-            o.hide_viewport = hv
             o.hide_set(hg)
-            o.hide_render = hr
+            o.hide_viewport = False
+            o.hide_render = False
 
     out_dir = "/home/zoro/harvester/Harvester/Assets/Cars/MuscleFastback_01"
     os.makedirs(out_dir, exist_ok=True)
@@ -1117,20 +1265,23 @@ def export_muscle_fastback_01_fbx():
     )
 
     for o in bpy.data.objects:
-        o.hide_viewport = False
         o.hide_set(False)
+    for sw in sw_objs:
+        sw.data.transform(Matrix.Rotation(-math.radians(90.0), 4, 'X'))
+        sw.data.update()
+        sw.rotation_euler = Euler((math.radians(72.0), 0.0, 0.0), 'XYZ')
     if root:
         bpy.context.collection.objects.link(root)
         for ch in top_children:
             ch.parent = root
             ch.matrix_parent_inverse = Matrix.Identity(4)
     bpy.context.view_layer.update()
-    for name, (hv, hg, hr) in vis_states.items():
+    for name, hg in vis_states.items():
         o = bpy.data.objects.get(name)
         if o:
-            o.hide_viewport = hv
             o.hide_set(hg)
-            o.hide_render = hr
+            o.hide_viewport = False
+            o.hide_render = False
     if root:
         bpy.ops.object.select_all(action='DESELECT')
         root.select_set(True)

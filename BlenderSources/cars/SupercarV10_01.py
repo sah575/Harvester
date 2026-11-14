@@ -212,6 +212,166 @@ def add_empty(name, pos_u, parent=None, forward_plus_z=True, visible=True):
     return emp
 
 
+
+def build_steering_variant(name, mats_list, pivot_u, root_obj=None, visible=True,
+                           r_rim=0.148, is_yoke=False, spoke_mat_idx=0):
+    """
+    Direksiyon simidi varyantini kendi yerel XY duzleminde, merkezi (0, 0, 0) olacak sekilde uretir:
+      - Yerel +X: Sag
+      - Yerel +Y: Simit ust kenari (saat 12 yonu)
+      - Yerel +Z: Direksiyon kolonu boyunca ileri (torpidoya dogru; mesh.bounds en ince ekseni yerel Z!)
+      - Gobek (hub): cap 7.0 cm (r = 0.035 m), z = +0.008 .. +0.028 m (merkez +0.018 m, halkadan 3.4 cm geride)
+      - Halka (rim): 16 segmentli ici bos simit, boru kesiti 2.8 cm (r_tube = 0.014 m), z = -0.028 .. -0.002 m (merkez -0.015 m)
+      - Saat 12 isareti: ustte dar serit (genislik ~2.5 cm <= 3.0 cm), mat_idx = 1
+      - 3 Kol (sol 195 deg, sag -15 deg, alt 270 deg): hem halkadan hem gobekten 6 mm (>= 5 mm) ayrik;
+        alt kol her zaman Interior_Dark (mat_idx = 0). Hicbir yuz baska bir yuzle ayni duzlemde degil.
+      - Kolon ekseninde 18 derece egik (yerel +Z model uzayinda (0, +0.309, +0.951)).
+    """
+    mesh = bpy.data.meshes.new(name + "_mesh")
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    bm = bmesh.new()
+    verts = []
+    faces = []
+
+    def add_local_prism(quad_front, quad_back, m_idx):
+        base = len(verts)
+        verts.extend(quad_front)
+        verts.extend(quad_back)
+        faces.extend([
+            ((base + 0, base + 3, base + 2, base + 1), m_idx),
+            ((base + 4, base + 5, base + 6, base + 7), m_idx),
+            ((base + 0, base + 1, base + 5, base + 4), m_idx),
+            ((base + 1, base + 2, base + 6, base + 5), m_idx),
+            ((base + 2, base + 3, base + 7, base + 6), m_idx),
+            ((base + 3, base + 0, base + 4, base + 7), m_idx),
+        ])
+
+    def add_local_box(x0, y0, z0, x1, y1, z1, m_idx):
+        qf = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)]
+        qb = [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+        add_local_prism(qf, qb, m_idx)
+
+    # 1. Gobek (Hub): cap = 7.0 cm (r_hub = 0.035 m), yerel z = +0.008 .. +0.028 m (merkez +0.018 m, halkadan 3.4 cm geride)
+    r_hub = 0.035
+    z_hub0, z_hub1 = 0.008, 0.028
+    hub_segs = 12
+    hbase = len(verts)
+    for i in range(hub_segs):
+        ang = 2.0 * math.pi * i / hub_segs
+        verts.append((math.cos(ang) * r_hub, math.sin(ang) * r_hub, z_hub0))
+    for i in range(hub_segs):
+        ang = 2.0 * math.pi * i / hub_segs
+        verts.append((math.cos(ang) * r_hub, math.sin(ang) * r_hub, z_hub1))
+    for i in range(hub_segs):
+        ni = (i + 1) % hub_segs
+        faces.append(((hbase + i, hbase + ni, hbase + hub_segs + ni, hbase + hub_segs + i), 0))
+    faces.append((tuple(hbase + i for i in reversed(range(hub_segs))), 0))
+    faces.append((tuple(hbase + hub_segs + i for i in range(hub_segs)), 0))
+
+    if is_yoke:
+        # Sol ve sag yatay kollar (gobekten 6 mm ayrik: x_in=0.041 m, yan tutamaklardan 6 mm ayrik: x_out=0.124 m)
+        for sx in (-1.0, 1.0):
+            x_a = min(sx * 0.041, sx * 0.124)
+            x_b = max(sx * 0.041, sx * 0.124)
+            add_local_box(x_a, -0.014, -0.015, x_b, 0.014, -0.003, 0)
+            # Yan kelebek/yoke tutamaklar (x = 0.130 .. 0.158, y = -0.125 .. +0.125 -> boy 0.250 m, z = -0.028 .. -0.002 -> kalinlik 0.056 m < boy/4!)
+            gx0 = min(sx * 0.130, sx * 0.158)
+            gx1 = max(sx * 0.130, sx * 0.158)
+            add_local_box(gx0, -0.125, -0.028, gx1, 0.095, -0.002, 0)
+            # Ust tutamak vurgu uclari (5 mm ayrik: y = 0.100 .. 0.125)
+            add_local_box(gx0,  0.100, -0.028, gx1, 0.125, -0.002, 1)
+    else:
+        # 2. Ici Bos Simit Halka (16 segment, boru kesiti 2.8 cm -> r_tube = 0.014 m, z_merkez = -0.015 m)
+        # Segment 0 saat 12'de [85.5 deg, 94.5 deg] araligindadir -> genislik = 2.54 cm <= 3.0 cm!
+        r_tube = 0.0135
+        z_rim = -0.0145
+        tube_sides = 6
+        deg_list = [
+            85.5, 94.5,                                       # Seg 0: saat 12 ince isaret seridi (2.54 cm <= 3.0 cm)
+            119.0, 143.5, 168.0, 192.5, 217.0, 241.5, 265.5,  # Sol yarim (7 segment)
+            274.5,                                            # Seg 8: saat 6 alt simetrik segment
+            298.5, 323.0, 347.5, 12.0, 36.5, 61.0             # Sag yarim (7 segment) -> toplam 16 segment!
+        ]
+        n_ring = len(deg_list)
+        rbase = len(verts)
+        for deg in deg_list:
+            th = math.radians(deg)
+            ct, st = math.cos(th), math.sin(th)
+            for j in range(tube_sides):
+                phi = 2.0 * math.pi * j / tube_sides
+                cp, sp = math.cos(phi), math.sin(phi)
+                rr = r_rim + r_tube * cp
+                verts.append((rr * ct, rr * st, z_rim + r_tube * sp))
+        for i in range(n_ring):
+            ni = (i + 1) % n_ring
+            seg_mat = 1 if i == 0 else 0  # Yalniz saat 12 ince seridi (2.54 cm) mat_idx=1 kullanir
+            for j in range(tube_sides):
+                nj = (j + 1) % tube_sides
+                v00 = rbase + i * tube_sides + j
+                v10 = rbase + ni * tube_sides + j
+                v11 = rbase + ni * tube_sides + nj
+                v01 = rbase + i * tube_sides + nj
+                faces.append(((v00, v10, v11, v01), seg_mat))
+
+        # 3. Uc Ayrik Kol (Sol 195 deg, Sag -15 deg, Alt 270 deg)
+        #    r_in = 0.041 m (r_hub = 0.035 m gobekten 6 mm ayrik)
+        #    r_out = r_rim - r_tube - 0.006 (halka ic yuzeyinden 6 mm ayrik)
+        r_in = r_hub + 0.006
+        r_out = (r_rim - r_tube) - 0.006
+        half_w = 0.011  # 2.2 cm kol genisligi
+        for sp_deg, s_mat in ((195.0, spoke_mat_idx), (-15.0, spoke_mat_idx), (270.0, 0)):
+            ang = math.radians(sp_deg)
+            ux, uy = math.cos(ang), math.sin(ang)
+            px, py = -uy, ux
+            qf = [
+                (ux * r_in  - px * half_w, uy * r_in  - py * half_w,  0.010),
+                (ux * r_in  + px * half_w, uy * r_in  + py * half_w,  0.010),
+                (ux * r_out + px * half_w, uy * r_out + py * half_w, -0.020),
+                (ux * r_out - px * half_w, uy * r_out - py * half_w, -0.020),
+            ]
+            qb = [
+                (ux * r_in  - px * half_w, uy * r_in  - py * half_w,  0.019),
+                (ux * r_in  + px * half_w, uy * r_in  + py * half_w,  0.019),
+                (ux * r_out + px * half_w, uy * r_out + py * half_w, -0.010),
+                (ux * r_out - px * half_w, uy * r_out - py * half_w, -0.010),
+            ]
+            add_local_prism(qf, qb, s_mat)
+
+    bm_verts = [bm.verts.new(v) for v in verts]
+    bm.verts.ensure_lookup_table()
+    for f_idx, m_idx in faces:
+        try:
+            f = bm.faces.new([bm_verts[i] for i in f_idx])
+            f.material_index = m_idx
+        except ValueError:
+            pass
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(mesh)
+    bm.free()
+
+    for m in mats_list:
+        mesh.materials.append(m)
+
+    p_bl = Vector(u2b(pivot_u))
+    if root_obj is not None:
+        obj.parent = root_obj
+        obj.matrix_parent_inverse = Matrix.Identity(4)
+        obj.location = p_bl - root_obj.location
+    else:
+        obj.location = p_bl
+
+    # 18 derece kolon egimi: Blender'da +72 deg X donusu yerel +Z'yi kolon eksenine
+    # (Unity'de (0.000, +0.309, +0.951)) hizalar, ust kenari (+Y) surucuye dogru 18 derece yatirir.
+    obj.rotation_euler = Euler((math.radians(72.0), 0.0, 0.0), 'XYZ')
+    obj.scale = Vector((1.0, 1.0, 1.0))
+    obj["_target_visible"] = bool(visible)
+    obj.hide_viewport = False
+    obj.hide_render = False
+    return obj
+
+
 def build_supercar_v10_01():
     clear_scene()
 
@@ -238,12 +398,12 @@ def build_supercar_v10_01():
         # Fixed
         "Trim_Dark":     make_mat("Trim_Dark",     (0.03, 0.03, 0.035), metallic=0.05, roughness=0.85),
         "Carbon":        make_mat("Carbon",        (0.07, 0.075, 0.085), metallic=0.35, roughness=0.38),
-        "Metal_Chrome":  make_mat("Metal_Chrome",  (0.84, 0.86, 0.90), metallic=0.92, roughness=0.18),
-        "Interior_Dark": make_mat("Interior_Dark", (0.06, 0.065, 0.075), metallic=0.05, roughness=0.82),
+        "Metal_Chrome":  make_mat("Metal_Chrome",  (0.88, 0.90, 0.92), metallic=0.90, roughness=0.15),
+        "Interior_Dark": make_mat("Interior_Dark", (0.07, 0.07, 0.075), metallic=0.0,  roughness=0.85),
         "Light_Head":    make_mat("Light_Head",    (0.96, 0.98, 1.00), roughness=0.10, emission=(0.94, 0.98, 1.00), emission_strength=5.0),
         "Light_Tail":    make_mat("Light_Tail",    (1.00, 0.05, 0.03), roughness=0.15, emission=(1.00, 0.05, 0.03), emission_strength=4.5),
         "Decal_Graphic": make_mat("Decal_Graphic", (0.95, 0.96, 0.98), metallic=0.05, roughness=0.30),
-        "Screen":        make_mat("Screen",        (0.08, 0.82, 0.98), roughness=0.12, emission=(0.08, 0.82, 0.98), emission_strength=3.5),
+        "Screen":        make_mat("Screen",        (0.05, 0.38, 0.50), roughness=0.15, emission=(0.05, 0.42, 0.55), emission_strength=0.6),
     }
 
     # =========================================================================
@@ -400,13 +560,16 @@ def build_supercar_v10_01():
     p_cab.build(parent=root, pivot=(0.0, 0.10, 0.48), visible=True)
 
     p_dash = PartBuilder("interior_dash", [mats["Interior_Dark"], mats["Screen"]])
-    p_dash.add_box((-0.72, 0.52, 0.54), (0.72, 0.88, 0.75), mat_idx=0)
-    # Driver-focused monoposto gauge arch
-    p_dash.add_box((-0.54, 0.50, 0.72), (-0.20, 0.76, 0.82), mat_idx=0)
-    p_dash.add_cylinder((-0.37, 0.54, 0.65), (-0.37, 0.34, 0.67), 0.044, 0.038, segs=8, mat_idx=0)
-    # Digital cockpit display & telemetry screen (uses Screen material, NOT Neon!)
-    p_dash.add_box((-0.49, 0.51, 0.74), (-0.25, 0.53, 0.80), mat_idx=1)
-    p_dash.add_box((-0.12, 0.51, 0.60), ( 0.12, 0.53, 0.71), mat_idx=1)
+    p_dash.add_box((-0.72, 0.52, 0.52), (0.72, 0.88, 0.69), mat_idx=0)
+    # Recessed driver monoposto gauge arch (top visor 0.77..0.79 m, open cavity 0.69..0.77 m)
+    p_dash.add_box((-0.51, 0.50, 0.77), (-0.23, 0.76, 0.79), mat_idx=0)
+    p_dash.add_box((-0.51, 0.50, 0.69), (-0.48, 0.74, 0.77), mat_idx=0)
+    p_dash.add_box((-0.26, 0.50, 0.69), (-0.23, 0.74, 0.77), mat_idx=0)
+    p_dash.add_box((-0.49, 0.55, 0.69), (-0.25, 0.76, 0.77), mat_idx=0)
+    # Steering column sleeve entering lower dash below gauge screen
+    p_dash.add_cylinder((-0.37, 0.36, 0.61), (-0.37, 0.54, 0.58), 0.032, 0.038, segs=10, mat_idx=0)
+    # Compact digital cockpit display (width = 0.22 m = 15.3% <= 25% of dash width)
+    p_dash.add_box((-0.48, 0.53, 0.695), (-0.26, 0.55, 0.765), mat_idx=1)
     p_dash.build(parent=root, pivot=(0.0, 0.68, 0.68), visible=True)
 
     p_dseat = PartBuilder("interior_driver_seat", [mats["Interior_Dark"], mats["Paint_Accent"]])
@@ -420,27 +583,13 @@ def build_supercar_v10_01():
 
     # =========================================================================
     # 5. STEERING WHEEL SLOT (mod_steering_0_stock .. 2_drift)
+    #    Pivot at hub center (-0.370, 0.330, 0.610) -> Unity (-0.370, 0.610, 0.330).
+    #    Top of wheel reaches y = 0.757 m in Unity (3.3 cm below 0.790 m dash top line!).
     # =========================================================================
-    sw_pivot = (-0.37, 0.33, 0.67)
-    psw0 = PartBuilder("mod_steering_0_stock", [mats["Interior_Dark"], mats["Metal_Chrome"]])
-    psw0.add_cylinder((-0.37, 0.34, 0.67), (-0.37, 0.31, 0.67), 0.16, 0.16, segs=16, mat_idx=0)
-    psw0.add_box((-0.51, 0.31, 0.65), (-0.23, 0.34, 0.69), mat_idx=1)
-    psw0.add_box((-0.39, 0.31, 0.52), (-0.35, 0.34, 0.67), mat_idx=1)
-    psw0.build(parent=root, pivot=sw_pivot, visible=True)
-
-    psw1 = PartBuilder("mod_steering_1_formula", [mats["Carbon"], mats["Paint_Accent"]])
-    psw1.add_box((-0.53, 0.31, 0.62), (-0.21, 0.34, 0.71), mat_idx=0)
-    psw1.add_box((-0.54, 0.30, 0.58), (-0.49, 0.35, 0.76), mat_idx=0)
-    psw1.add_box((-0.25, 0.30, 0.58), (-0.20, 0.35, 0.76), mat_idx=0)
-    psw1.add_box((-0.46, 0.30, 0.65), (-0.42, 0.34, 0.69), mat_idx=1)
-    psw1.add_box((-0.32, 0.30, 0.65), (-0.28, 0.34, 0.69), mat_idx=1)
-    psw1.build(parent=root, pivot=sw_pivot, visible=False)
-
-    psw2 = PartBuilder("mod_steering_2_drift", [mats["Interior_Dark"], mats["Paint_Rim"]])
-    psw2.add_cylinder((-0.37, 0.30, 0.67), (-0.37, 0.27, 0.67), 0.165, 0.165, segs=16, mat_idx=0)
-    psw2.add_box((-0.52, 0.27, 0.65), (-0.22, 0.32, 0.69), mat_idx=1)
-    psw2.add_box((-0.375, 0.26, 0.80), (-0.365, 0.31, 0.84), mat_idx=1)
-    psw2.build(parent=root, pivot=sw_pivot, visible=False)
+    sw_pivot = (-0.37, 0.33, 0.61)
+    build_steering_variant("mod_steering_0_stock",   [mats["Interior_Dark"], mats["Metal_Chrome"]], sw_pivot, root_obj=root, visible=True,  r_rim=0.148, is_yoke=False, spoke_mat_idx=1)
+    build_steering_variant("mod_steering_1_formula", [mats["Carbon"],        mats["Paint_Accent"]], sw_pivot, root_obj=root, visible=False, r_rim=0.145, is_yoke=True,  spoke_mat_idx=0)
+    build_steering_variant("mod_steering_2_drift",   [mats["Interior_Dark"], mats["Paint_Rim"]],    sw_pivot, root_obj=root, visible=False, r_rim=0.145, is_yoke=False, spoke_mat_idx=1)
 
     # =========================================================================
     # 6. INTERIOR PASSENGER, PILLAR & ROLLCAGE SLOTS
@@ -999,41 +1148,34 @@ def build_supercar_v10_01():
     add_empty("light_head_R",   ( 0.64,  2.08, 0.50), parent=root, forward_plus_z=True)
     add_empty("light_tail_L",   (-0.62, -2.25, 0.72), parent=root, forward_plus_z=False)
     add_empty("light_tail_R",   ( 0.62, -2.25, 0.72), parent=root, forward_plus_z=False)
-    add_empty("camera_cockpit", (-0.37, -0.06, 0.93), parent=root, forward_plus_z=True)
+    add_empty("camera_cockpit", (-0.37, -0.10, 0.87), parent=root, forward_plus_z=True)
     add_empty("exhaust_L",      (-0.46, -2.32, 0.30), parent=root, forward_plus_z=False)
     add_empty("exhaust_R",      ( 0.46, -2.32, 0.30), parent=root, forward_plus_z=False)
 
-    # 1. Update view_layer while all objects are visible so Blender depsgraph evaluates matrix_local=(0,0,0) for all child rims
     bpy.context.view_layer.update()
 
-    # 2. Apply target visibility for both blender_kontrol.py (hide_get / hide_render) and FBX export (hide_viewport)
+    # Gizlemeyi yalniz gorunurlukle (hide_set) yap; hide_render ve hide_viewport KULLANMA!
     for o in bpy.data.objects:
         if "_target_visible" in o:
             vis = bool(o["_target_visible"])
             del o["_target_visible"]
             o.hide_set(not vis)
-            o.hide_viewport = not vis
-            o.hide_render = not vis
+            o.hide_viewport = False
+            o.hide_render = False
 
-    # Select root for blender_kontrol.py
     bpy.ops.object.select_all(action='DESELECT')
     root.select_set(True)
     bpy.context.view_layer.objects.active = root
 
 
 def export_supercar_v10_01_fbx():
-    """
-    Exports SupercarV10_01.fbx with top-level parts unparented from the temporary Blender root
-    so that in Unity the FBX root itself is SupercarV10_01 and Blender's 3-level bake_space_transform
-    bug never affects wheel->rim children. Then restores root parenting in Blender.
-    """
     root = bpy.data.objects.get("SupercarV10_01")
     top_children = list(root.children) if root else []
-    vis_states = {o.name: (o.hide_viewport, o.hide_get(), o.hide_render) for o in bpy.data.objects}
+    vis_states = {o.name: o.hide_get() for o in bpy.data.objects}
 
-    # Un-hide temporarily to unparent cleanly in depsgraph
     for o in bpy.data.objects:
         o.hide_viewport = False
+        o.hide_render = False
         o.hide_set(False)
     bpy.context.view_layer.update()
 
@@ -1044,12 +1186,19 @@ def export_supercar_v10_01_fbx():
         bpy.context.collection.objects.unlink(root)
     bpy.context.view_layer.update()
 
-    for name, (hv, hg, hr) in vis_states.items():
+    sw_objs = [o for o in bpy.data.objects if o.name.startswith("mod_steering_") and o.type == 'MESH']
+    for sw in sw_objs:
+        sw.data.transform(Matrix.Rotation(math.radians(90.0), 4, 'X'))
+        sw.data.update()
+        sw.rotation_euler = Euler((-math.radians(18.0), 0.0, 0.0), 'XYZ')
+    bpy.context.view_layer.update()
+
+    for name, hg in vis_states.items():
         o = bpy.data.objects.get(name)
         if o and o != root:
-            o.hide_viewport = hv
             o.hide_set(hg)
-            o.hide_render = hr
+            o.hide_viewport = False
+            o.hide_render = False
 
     out_dir = "/home/zoro/harvester/Harvester/Assets/Cars/SupercarV10_01"
     os.makedirs(out_dir, exist_ok=True)
@@ -1067,25 +1216,28 @@ def export_supercar_v10_01_fbx():
         mesh_smooth_type='OFF'
     )
 
-    # Restore root in Blender so Blender scene & blender_kontrol.py stay intact
+    for o in bpy.data.objects:
+        o.hide_set(False)
+    for sw in sw_objs:
+        sw.data.transform(Matrix.Rotation(-math.radians(90.0), 4, 'X'))
+        sw.data.update()
+        sw.rotation_euler = Euler((math.radians(72.0), 0.0, 0.0), 'XYZ')
     if root:
         bpy.context.collection.objects.link(root)
-        for o in bpy.data.objects:
-            o.hide_viewport = False
-            o.hide_set(False)
-        bpy.context.view_layer.update()
         for ch in top_children:
             ch.parent = root
             ch.matrix_parent_inverse = Matrix.Identity(4)
-        bpy.context.view_layer.update()
-        for name, (hv, hg, hr) in vis_states.items():
-            o = bpy.data.objects.get(name)
-            if o:
-                o.hide_viewport = hv
-                o.hide_set(hg)
-                o.hide_render = hr
-        bpy.context.view_layer.objects.active = root
+    bpy.context.view_layer.update()
+    for name, hg in vis_states.items():
+        o = bpy.data.objects.get(name)
+        if o:
+            o.hide_set(hg)
+            o.hide_viewport = False
+            o.hide_render = False
+    if root:
+        bpy.ops.object.select_all(action='DESELECT')
         root.select_set(True)
+        bpy.context.view_layer.objects.active = root
 
 
 if __name__ == "__main__":

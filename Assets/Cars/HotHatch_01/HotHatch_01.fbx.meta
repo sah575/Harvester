@@ -3,7 +3,77 @@ guid: 1fea6a6fa4cc386aa834cf8f69bcae23
 ModelImporter:
   serializedVersion: 24000
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Carbon
+    second: {fileID: 2100000, guid: d4197700d0b6b488abec6f832b8aea43, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Decal_Graphic
+    second: {fileID: 2100000, guid: 5a6f20ea09d06168985362d1a0aa1fd7, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Glass_Tint
+    second: {fileID: 2100000, guid: 0253b7e9f7e07ef0481dd6716b7843aa, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Interior_Dark
+    second: {fileID: 2100000, guid: 76aa663942fa8e52399fc1f149ec8c76, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Light_Head
+    second: {fileID: 2100000, guid: 028cf3b907e05fdaeb2e71932e435c62, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Light_Tail
+    second: {fileID: 2100000, guid: d9097a8b707de6cd0b5d1007350261ba, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Metal_Chrome
+    second: {fileID: 2100000, guid: f08f0dc31cd37b97da89a7bce12ae70a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Neon
+    second: {fileID: 2100000, guid: 05cf57678c45398819467b315c6ef35e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Paint_Accent
+    second: {fileID: 2100000, guid: a9cfd8228de4e18db86ab80a9e6396fe, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Paint_Body
+    second: {fileID: 2100000, guid: 36629b29fb716498897a689254b02a30, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Paint_Caliper
+    second: {fileID: 2100000, guid: 7e95581fa4a0ee2b3a86dbfad5dafb73, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Paint_Rim
+    second: {fileID: 2100000, guid: 7b00dc5234709014aac9c19b60de75cd, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Screen
+    second: {fileID: 2100000, guid: 8bf7226a03f90673f8eefcab7e6f0bfb, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Trim_Dark
+    second: {fileID: 2100000, guid: 21008d65e63d5ad86a53627103b6127a, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0

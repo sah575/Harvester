@@ -67,6 +67,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Screen
+    second: {fileID: 2100000, guid: bddb47f3e694494c9ef3e49f76fdc88a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Trim_Dark
     second: {fileID: 2100000, guid: 9aee5fd4200ff5a60af9dd7f81b6496d, type: 2}
   materials:
