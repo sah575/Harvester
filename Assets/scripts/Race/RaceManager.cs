@@ -133,6 +133,13 @@ namespace Harvester.Race
             return null;
         }
 
+        /// <summary>Sadece sunucu: araba hâlâ yarışıyor mu (bitirmedi, elenmedi, çıkmadı). Yarışçı listesinde yoksa true (test).</summary>
+        public bool IsCarRacing(RaceCar car)
+        {
+            foreach (var r in racers) if (r.Car == car) return r.Status == RacerStatus.Racing;
+            return true;
+        }
+
         /// <summary>Sadece sunucu, yarış başlamadan: tur sayısını değiştirir (test).</summary>
         public void OverrideLaps(int count)
         {

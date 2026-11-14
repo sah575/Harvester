@@ -15,6 +15,7 @@ namespace Harvester.Race
     /// (editörde bayraklar oradan okunur, ör. "-autoDrive -autoRam rear -autoRamSwitch 3").
     ///   -autoDrive           araba pisti CarTrackFollower ile kendi şeridinde sürer
     ///   -autoSpeedScale K    sürücünün hız çarpanı (0.2–1, varsayılan 0.7)
+    ///   -autoFullThrottle    çarpmayan sürücüler tam gaz sürer (fren yok, kullanıcı gibi; CarTrackFollower.FullThrottle)
     ///   -autoRam MOD        MOD: rear (arkadan), side (yandan), rub (yüksek hızda yan yana sürtünme), corner (virajda kapı
     ///                        kapıya), squeeze (bariyere sıkıştırma), pit (arka çamurluğa çapraz), harvester (harvester'a yanaşma)
     ///                        Çarpma yarışın 5. sn'sinden sonra başlar; her denemeden sonra sürücü birkaç sn şeridine döner.
@@ -30,7 +31,9 @@ namespace Harvester.Race
     ///   -autoShot            ekran görüntüleri: HUD (yarışın 4. sn'si), ilk çarpışma, kaput kamerası, izleyici kamerası
     ///   -ntBuffer N          NetworkTransform yorumlama tamponuna N tick ekler (deneme için)
     ///   -ntInterp T          yorumlama türünü zorlar: LegacyLerp, Lerp, SmoothDampening (deneme için)
-    /// Her 2 sn'de "[AutoTest] yarış ..." satırı: faz, sıralama, konumlar, vuruş sayısı.
+    /// Her 2 sn'de "[AutoTest] yarış ..." satırı: faz, sıralama, konumlar, vuruş sayısı, harvester açığı (hAçık).
+    /// Her makinede harvester'ın en geride kalan yarışan arabaya açığı (tablanın önünden, pist boyunca) her karede ölçülür;
+    /// yarış bitince "[AutoTest] harvester açığı: ..." özeti yazılır (kalkışın ilk 11 sn'si hariç).
     /// Çarpışmalar ayrıca CarContactSolver'da "[CarHit]" önekiyle loglanır.
     /// </summary>
     [DefaultExecutionOrder(2000)] // konum kaydı RemoteExtrapolator'dan sonra
@@ -59,7 +62,11 @@ namespace Harvester.Race
         }
 
         private bool drive;
+        private bool fullThrottle;
         private float speedScale = 0.7f;
+        // Harvester açığı ölçümü (her makinede)
+        private float gapMax = float.NegativeInfinity, gapOver30, gapSeconds, gapSum, gapNow = float.NaN;
+        private bool gapReported;
         private RamMode ram;
         private int ramSwitch;
         private float elimAfter = -1f;
@@ -108,6 +115,8 @@ namespace Harvester.Race
         private void Configure(string[] args)
         {
             drive = Array.IndexOf(args, "-autoDrive") >= 0;
+            fullThrottle = Array.IndexOf(args, "-autoFullThrottle") >= 0;
+            if (fullThrottle) drive = true;
             float f;
             int n;
             if (float.TryParse(Arg(args, "-autoSpeedScale"), NumberStyles.Float, CultureInfo.InvariantCulture, out f)) speedScale = Mathf.Clamp(f, 0.2f, 1f);
@@ -151,7 +160,7 @@ namespace Harvester.Race
                 NetworkTransform.InterpolationBufferTickOffset = n;
                 Debug.Log("[AutoTest] NetworkTransform tampon payı: " + n + " tick");
             }
-            Debug.Log("[AutoTest] Yarış testi: sürüş=" + drive + " hızÇarpanı=" + speedScale + " çarpma=" + ram + " geçiş=" + ramSwitch + " eleme=" + elimAfter + " tur=" + lapsOverride + " harvesterBekle=" + harvesterHold);
+            Debug.Log("[AutoTest] Yarış testi: sürüş=" + drive + " tamGaz=" + fullThrottle + " hızÇarpanı=" + speedScale + " çarpma=" + ram + " geçiş=" + ramSwitch + " eleme=" + elimAfter + " tur=" + lapsOverride + " harvesterBekle=" + harvesterHold);
         }
 
         private void OnDestroy()
@@ -180,6 +189,7 @@ namespace Harvester.Race
                 else if (harvesterHold > 0f) { HarvesterLink.SetRunning(true); harvesterHold = 0f; Debug.Log("[AutoTest] Harvester bırakıldı"); }
             }
             UpdateDrivers(manager);
+            UpdateHarvesterGap(manager);
             UpdateElimination(manager);
             UpdateScreenshots(manager);
 
@@ -188,7 +198,8 @@ namespace Harvester.Race
             timer = 0f;
             var sb = new StringBuilder("[AutoTest] yarış faz=").Append(manager.Phase)
                 .Append(" süre=").Append(manager.RaceTime.ToString("F1", CultureInfo.InvariantCulture))
-                .Append(" vuruş=").Append(CarContactSolver.HitCount);
+                .Append(" vuruş=").Append(CarContactSolver.HitCount)
+                .Append(" hAçık=").Append(float.IsNaN(gapNow) ? "-" : gapNow.ToString("F1", CultureInfo.InvariantCulture));
             foreach (var s in manager.Standings)
                 sb.Append(" | ").Append(s.Position).Append(". ").Append(s.Name).Append('(').Append(s.ClientId).Append(") ")
                   .Append(s.Status).Append(" tur=").Append(s.Lap).Append(" ilerleme=").Append(s.Progress.ToString("F0", CultureInfo.InvariantCulture));
@@ -227,6 +238,7 @@ namespace Harvester.Race
                 ulong lane = car.IsSpawned ? car.OwnerClientId : (ulong)drivers.Count;
                 driver.Follower.LaneOffset = (lane % 2 == 0 ? -1f : 1f) * (RaceTrack.Current != null ? RaceTrack.Current.Width * 0.2f : 2f);
                 driver.Follower.SpeedScale = driver.Ram == RamMode.None ? speedScale : 1f;
+                driver.Follower.FullThrottle = fullThrottle && driver.Ram == RamMode.None;
                 drivers.Add(driver);
                 Debug.Log("[AutoTest] Test sürücüsü: " + Label(car) + " çarpma=" + driver.Ram + " şerit=" + driver.Follower.LaneOffset.ToString("F1", CultureInfo.InvariantCulture));
             }
@@ -477,6 +489,45 @@ namespace Harvester.Race
                 if (dd < bestD) { bestD = dd; best = other; }
             }
             return best;
+        }
+
+        // ------------------------------------------------------------------ Harvester açığı
+
+        /// <summary>
+        /// Bu makinede görünen harvester'ın en geride kalan yarışan arabaya açığı (m). Kalkış penceresi (yarışın ilk 11 sn'si)
+        /// istatistikten hariç; biçilen arabanın ardından yeniden yakalama süresi de 30 m'yi aşabilir (beklenen).
+        /// </summary>
+        private void UpdateHarvesterGap(RaceManager manager)
+        {
+            var ai = HarvesterAI.Instance;
+            gapNow = float.NaN;
+            if (manager == null || ai == null) return;
+            if (manager.Phase == RacePhase.Finished && !gapReported && gapSeconds > 0f)
+            {
+                gapReported = true;
+                Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                    "[AutoTest] harvester açığı ({0}): ölçüm {1:F1} sn, ort. {2:F1} m, en fazla {3:F1} m, 30 m üstünde {4:F2} sn, harvester hayalet={5}",
+                    role, gapSeconds, gapSum / Mathf.Max(1e-3f, gapSeconds), gapMax, gapOver30, ai.IsGhost));
+            }
+            if (manager.Phase != RacePhase.Racing) return;
+            float best = float.PositiveInfinity;
+            foreach (var car in RaceCar.All)
+            {
+                if (car == null || car.IsEliminated) continue;
+                RacerState state;
+                if (car.IsSpawned && manager.TryGetState(car.NetworkObject.IsPlayerObject ? car.OwnerClientId : ulong.MaxValue, out state)
+                    && state.Status != RacerStatus.Racing) continue;
+                float g = ai.OpenGapTo(car);
+                if (g > -12f && g < best) best = g;
+            }
+            if (float.IsInfinity(best)) return;
+            gapNow = best;
+            if (manager.RaceTime < 11f) return;
+            float dt = Time.deltaTime;
+            gapSeconds += dt;
+            gapSum += best * dt;
+            gapMax = Mathf.Max(gapMax, best);
+            if (best > 30.5f) gapOver30 += dt;
         }
 
         // ------------------------------------------------------------------ Eleme testi

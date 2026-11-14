@@ -14,114 +14,46 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   level: 1
   displayName: Seviye 1
-  maxSpeed: 75
+  maxSpeed: 100
   cruiseSpeed: 30
-  acceleration: 8
-  braking: 14
-  lateralAcceleration: 13
-  timeGapTarget: 0.6
-  timeGapBandHigh: 1.5
-  timeGapMinSpeed: 15
-  gapGain: 0.5
-  softLandingDecel: 4
-  maxBackoff: 1.5
-  pressureCreepRate: 0.012
-  creepResetMargin: 0.3
-  targetSpeedRiseTime: 0.25
-  targetSpeedFallTime: 1.2
-  launchAcceleration: 28
-  launchMaxSpeed: 58
-  launchLandingDecel: 10
-  launchMaxDuration: 8
+  acceleration: 25
+  braking: 35
+  stopDeceleration: 8
+  leashMax: 30
+  leashReelInSpeed: 50
+  leashLandingDecel: 20
+  carRearOffset: 2.2
+  pressureGap: 20
+  pressureBand: {x: 15, y: 25}
+  pressureMinGap: 8
+  gapGain: 0.8
+  softLandingDecel: 6
+  maxBackoff: 6
+  speedSmoothing: 0.15
+  crashAverageTime: 3
+  crashSpeedRatio: 0.75
+  crashMinSpeedLoss: 6
+  crashStopSpeed: 5
+  crashImpactDecel: 30
+  crashImpactRatio: 0.8
+  crashFlipUp: 0.35
+  paceLateralAcceleration: 13
+  paceBraking: 12
+  paceTopSpeed: 45
+  attackClosingSpeed: 25
+  attackMaxDuration: 8
+  attackLateralSpeed: 12
   launchWindow: 10
-  launchHoldGap: 12
-  pressureDistance: 25
-  catchupSpeedCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 25
-      value: 39.5
-      inSlope: 0
-      outSlope: 0.2625
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 65
-      value: 50
-      inSlope: 0.2625
-      outSlope: 0.26666668
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 140
-      value: 70
-      inSlope: 0.26666668
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  catchupCornerCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 40
-      value: 1
-      inSlope: 0
-      outSlope: 0.012
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 90
-      value: 1.6
-      inSlope: 0.012
-      outSlope: 0.010000001
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 150
-      value: 2.2
-      inSlope: 0.010000001
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  pressureSpeedCap: 39.5
-  punishRange: 50
-  punishSpeedRatio: 0.6
-  paceTopSpeed: 40
-  paceLateralAcceleration: 15
-  paceBraking: 18
-  punishCornerBoost: 2
-  punishSpeedCap: 46
-  punishClosingSpeed: 0
-  punishHold: 2
+  launchMinGap: 12
   catchupTeleport: 1
-  maxGap: 120
+  teleportGap: 120
   visibleDistanceOverride: 0
   fogVisibilityThreshold: 0.15
   minVisibleDistance: 80
   teleportCooldown: 3
-  turnRate: 50
-  yawAcceleration: 160
   lateralAimSpeed: 6.5
   reactionDelay: 0.2
+  headingSmoothing: 0.08
   headerWidth: 9
   headerDepth: 3.5
   headerLead: 1.2
@@ -130,6 +62,4 @@ MonoBehaviour:
   hitForwardSpeed: 5
   hitRearSpeed: 4
   hitCooldown: 0.7
-  targetSwitchMargin: 15
-  minTargetHold: 1.5
   behindTolerance: 6

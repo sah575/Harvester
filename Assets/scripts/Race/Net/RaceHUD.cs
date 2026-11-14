@@ -137,7 +137,14 @@ namespace Harvester.Race
             Transform harvester = manager.HarvesterTransform;
             if (phase == RacePhase.Racing && harvester != null && car != null && !car.IsEliminated && (!hasMe || me.Status == RacerStatus.Racing))
             {
+                // Tablanın önünden arabanın arkasına pist boyunca açık (harvester'ın tasması bununla ölçülür); yanımızda/arkamızdaysa düz mesafe
                 float distance = Vector3.Distance(harvester.position, car.transform.position);
+                var ai = HarvesterAI.Instance;
+                if (ai != null)
+                {
+                    float open = ai.OpenGapTo(car);
+                    if (open > -12f && open < 1000f) distance = Mathf.Max(0f, open);
+                }
                 if (distance < warnDistance)
                 {
                     float t = Mathf.InverseLerp(warnDistance, dangerDistance, distance);

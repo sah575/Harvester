@@ -4,7 +4,7 @@ import argparse, json, os, re, subprocess, time
 from pathlib import Path
 
 p=argparse.ArgumentParser()
-p.add_argument('--mode',choices=['online','perf'],default='online')
+p.add_argument('--mode',choices=['online','perf','harvester'],default='online',help='harvester: iki player Relay yarışı, tam gaz sürücüler, harvester açığı (tasma) ölçümü')
 p.add_argument('--label',default='temizlik')
 p.add_argument('--seconds',type=float,default=60)
 p.add_argument('--gpu',choices=['intel','nvidia'],default='intel')
@@ -38,14 +38,21 @@ def launch(role,flags):
 def read(path):return path.read_text(errors='replace') if path.exists() else ''
 result={'label':a.label,'gpu_requested':a.gpu,'api_requested':a.api,'mode':a.mode,'debris_collision_disabled_requested':a.no_debris_collision}
 try:
-    if a.mode=='online':
-        host,hlog=launch('host',['-autoHost','-autoOnline','-autoStart','2','-autoRounds','1','-autoDrive','-autoTrace','-autoShot','-autoElim','8'])
+    if a.mode in ('online','harvester'):
+        if a.mode=='online':
+            hflags=['-autoHost','-autoOnline','-autoStart','2','-autoRounds','1','-autoDrive','-autoTrace','-autoShot','-autoElim','8']
+            cflags=['-autoJoin','kod','-autoOnline','-autoDrive','-autoTrace','-autoShot']
+        else:
+            # Harvester tehdidi: iki tam gaz sürücü, 2 tur; her iki tarafta harvester açığı özeti
+            hflags=['-autoHost','-autoOnline','-autoStart','2','-autoRounds','1','-autoFullThrottle','-autoLaps','2','-autoTrace']
+            cflags=['-autoJoin','kod','-autoOnline','-autoFullThrottle','-autoTrace']
+        host,hlog=launch('host',hflags)
         deadline=time.monotonic()+45
         while '[AutoTest] Davet kodu:' not in read(hlog):
             if host.poll() is not None or time.monotonic()>deadline:raise RuntimeError('Host davet kodu alamadı.')
             time.sleep(.5)
-        client,clog=launch('client',['-autoJoin','kod','-autoOnline','-autoDrive','-autoTrace','-autoShot'])
-        deadline=time.monotonic()+max(120,a.seconds)
+        client,clog=launch('client',cflags)
+        deadline=time.monotonic()+max(240 if a.mode=='harvester' else 120,a.seconds)
         while time.monotonic()<deadline:
             h=read(hlog);c=read(clog)
             ended=h.rfind('[Race] Yarış bitti:')
@@ -58,6 +65,16 @@ try:
         result['passed']=all(result[k] for k in ['host_race_started','host_finished','host_returned','client_returned'])
         result['network_mismatch']='NetworkConfig mismatch' in h+c or 'PrefabHash' in h+c
         result['passed']=result['passed'] and not result['network_mismatch']
+        if a.mode=='harvester':
+            gaps={}
+            for role,text in (('host',h),('client',c)):
+                m=re.search(r'\[AutoTest\] harvester açığı \((\w+)\): ölçüm ([\d.]+) sn, ort\. ([\d.-]+) m, en fazla ([\d.-]+) m, 30 m üstünde ([\d.]+) sn',text)
+                if m:gaps[role]={'olcum_sn':float(m.group(2)),'ort_m':float(m.group(3)),'en_fazla_m':float(m.group(4)),'ust30_sn':float(m.group(5))}
+            result['harvester_gap']=gaps
+            result['host_cuts']=[l for l in h.splitlines() if l.startswith('[Harvester] biçti') or l.startswith('[Harvester] kaza')]
+            result['host_eliminated']=[l for l in h.splitlines() if l.startswith('[Race] Elendi')]
+            result['client_eliminated_seen']=[l for l in c.splitlines() if 'ELENDİ' in l][:1]
+            result['passed']=result['passed'] and 'host' in gaps and 'client' in gaps
         test_marker='[Test] GEÇİCİ: elenen araç enkazlarının'
         result['debris_collision_disabled_actual']=test_marker in h and test_marker in c
         result['passed']=result['passed'] and result['debris_collision_disabled_actual']==a.no_debris_collision

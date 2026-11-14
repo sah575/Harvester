@@ -7,20 +7,20 @@ using UnityEngine;
 namespace Harvester.Race
 {
     /// <summary>
-    /// Kimsenin sürmediği, yapay zekânın sürdüğü harvester: pisti takip eder, önündeki en yakın arabayı kovalar,
-    /// tablasına giren arabayı biçer (eler), gövdesine çarpan arabayı savurur.
+    /// Kimsenin sürmediği, yapay zekânın sürdüğü harvester: en geride kalan arabanın hemen arkasında durur,
+    /// kaza yapanı biçer (eler), gövdesine çarpan arabayı savurur.
     ///
     /// Yetki: sadece sunucu karar verir ve sürer. İstemciler NetworkTransform (sunucu otoritesi) +
     /// RemoteExtrapolator ile görür; makara hızı ve hedef NetworkVariable ile gelir. Ağ yokken (NetworkManager yok ya da
     /// dinlemiyor) yerelde sunucu gibi çalışır, tek sahnede test edilebilir.
     ///
-    /// Hareket: kinematik Rigidbody + MovePosition/MoveRotation. Yatayda basit bir araç modeli (yön, dönüş hızı, hız)
-    /// ivme ve dönüş sınırlarıyla yumuşak sürülür; yükseklik ve eğim tekerlek noktalarından aşağı atılan ışınlarla bulunur.
-    /// Bariyerlerin içinde kalması için pistin ortasından yanal sapması sınırlanır.
+    /// Hareket: kinematik, pist orta çizgisine bağlı. Durum = pist mesafesi s + yanal kayma l; konum orta çizgiden,
+    /// yükseklik ve eğim tekerlek noktalarından aşağı atılan ışınlardan gelir. Virajda yavaşlama, dönüş sınırı ve
+    /// bariyere sürtünme yok; hız sadece hedefe göre ayarlanır.
     ///
-    /// Hız (lastik bant): hedef uzaktayken hızlanıp yakalar, yakınken hedefin biraz üstünde ama arabanın son hızının
-    /// biraz altında bir tavanla baskı kurar. İyi süren düzlükte biraz açar, hata yapan yakalanır. Ayarlar
-    /// <see cref="HarvesterDifficulty"/>'de.
+    /// Davranış modeli (formüller <see cref="HarvesterDifficulty"/>'nin belgesinde):
+    ///   Kalkış → Baskı (açık ~20 m, en az 8 m) ↔ Saldırı (hedef kaza yaptı) ; hedef değişince Yakalama (tasma kısalır).
+    ///   Tasma: kalkış dışında açık asla leashMax'ı geçmez. Yarış bitince collider'lar kapanır, kimse biçilmez.
     ///
     /// Biçme ve çarpma, host'ta uzak arabaların gösterilen (RemoteExtrapolator ile tahmini) konumuna göre yapılır:
     /// "sürücünün lehine" kuralı, host ne görüyorsa o.
@@ -28,6 +28,9 @@ namespace Harvester.Race
     [RequireComponent(typeof(Rigidbody))]
     public class HarvesterAI : NetworkBehaviour
     {
+        /// <summary>Davranış modu (sunucuda).</summary>
+        public enum Mode { Durdu, HedefYok, Geride, Kalkis, Baski, Yakalama, Saldiri, Bitti }
+
         /// <summary>Sahnedeki harvester (izleyici kamerası ve HUD için).</summary>
         public static HarvesterAI Instance { get; private set; }
 
@@ -35,6 +38,8 @@ namespace Harvester.Race
         public event Action<RaceCar> OnCarCut;
         /// <summary>Sunucuda (ya da ağsız) bir arabaya çarpıldığında (araba, hız değişimi).</summary>
         public event Action<RaceCar, Vector3> OnCarHit;
+        /// <summary>Sunucuda (ya da ağsız) bir arabanın kazası tespit edildiğinde (araba, gerekçe).</summary>
+        public event Action<RaceCar, string> OnCrashDetected;
 
         [Header("Zorluk")]
         [Tooltip("Seviye ayarları. Boşsa Seviye 1 varsayılanları kullanılır.")]
@@ -99,36 +104,50 @@ namespace Harvester.Race
         private Rigidbody body;
         private NetworkTransform networkTransform;
         private HarvesterDifficulty fallbackDifficulty;
+        private Collider[] ownColliders;
+        private bool ghost;
 
-        // Sürüş durumu (sunucu)
+        // Sürüş durumu (sunucu): pist mesafesi + yanal kayma
         private Vector3 position;
-        private float yaw, yawRate, speed, verticalSpeed;
+        private float yaw, yawRate, speed;
+        private float lateral, lateralRate;
         private Quaternion rotation = Quaternion.identity;
         private Vector3 groundNormal = Vector3.up;
-        private float aimLateral;
         private float trackDistance;
         private bool hasTrackHint;
         private bool stateInitialized;
         private bool runningSetExplicitly;
+        private float releaseTime = -100f;
 
         // Hedef (sunucu)
         private RaceCar target;
-        private float targetGap = float.PositiveInfinity;
-        private float nearestAheadGap = float.PositiveInfinity;
-        private float targetSpeedSmoothed; // simetrik süzgeç (av modu tespiti)
-        private float targetSpeedRef;      // asimetrik: hızlı yükselir, yavaş düşer (kontrolcünün referansı)
-        private float creep;               // baskı sürünmesi: hedeflenen zaman açığından düşülen (sn)
-        private float targetPace;          // hedefin yerinde yarış temposu (m/sn)
-        private float targetChosenAt = -10f;
-        private float punishUntil = -10f;
-        private bool launching;
-        private float launchStartTime = -100f;
-        private RaceCar nearestAheadCar;
+        private float targetGap = float.PositiveInfinity; // açık: tablanın önünden arabanın arkasına (m)
+        private float targetRootGap = float.PositiveInfinity;
+        private float leashLimit = float.PositiveInfinity;
+        private float nearestAnyGap = float.PositiveInfinity; // önündeki herhangi bir arabaya açık (bitirmişler dahil)
+        private Mode mode = Mode.Durdu;
         private float lastTeleportTime = -100f;
-        private readonly Dictionary<RaceCar, float> carDistanceCache = new Dictionary<RaceCar, float>();
         private readonly float[] lateralHistory = new float[96];
         private readonly float[] lateralHistoryTime = new float[96];
         private int lateralHistoryHead, lateralHistoryCount;
+
+        /// <summary>Her araba için hız geçmişi ve kaza durumu (sunucu).</summary>
+        private class CarWatch
+        {
+            public float DistanceHint = -1f;
+            public float Speed;        // pist boyunca süzülmüş hız
+            public float RawSpeed;     // pist boyunca anlık hız
+            public float Average;      // son birkaç saniyenin ortalaması
+            public float Decel;        // süzülmüş hızın düşme hızı (m/sn², yavaşlarken artı)
+            public float ImpactTime = -100f; // son sert yavaşlama (çarpma) anı
+            public bool Initialized;
+            public bool Crashed;
+            public float CrashTime = -100f;
+            public string CrashReason = "";
+            public int LastStep = -1;
+        }
+        private readonly Dictionary<RaceCar, CarWatch> watches = new Dictionary<RaceCar, CarWatch>();
+        private int stepCounter;
 
         // Temas (sunucu)
         private readonly Collider[] overlapBuffer = new Collider[32];
@@ -165,47 +184,53 @@ namespace Harvester.Race
         public float Speed => Simulates ? speed : visualSpeed;
         /// <summary>Kovalanan araba (yoksa null). İstemcide ağdan gelir.</summary>
         public RaceCar Target => Simulates ? target : ResolveTarget(netTargetId.Value);
-        /// <summary>Hedefe pist boyunca açık (m, sadece sunucuda anlamlı; hedef yoksa sonsuz).</summary>
+        /// <summary>Hedefe açık (m, tablanın önünden arabanın arkasına; sunucuda; hedef yoksa sonsuz).</summary>
         public float TargetGap => targetGap;
+        /// <summary>Önündeki en geride kalan arabaya açık (hedefle aynı, eski ad).</summary>
+        public float NearestAheadGap => targetGap;
+        /// <summary>Şu anki tasma uzunluğu (m): yeniden yakalamada büyük, sonra leashMax.</summary>
+        public float LeashLimit => leashLimit;
         /// <summary>Çalışıyor mu (sürüyor, biçiyor). Yarış yöneticisi geri sayımda kapalı tutar.</summary>
         public bool Running { get; private set; }
-        /// <summary>Kalkış atağı: çalışmaya başladıktan sonra sürüye yetişene dek yüksek ivme ve hız tavanı.</summary>
-        public bool Launching => Running && launching;
-        /// <summary>Kalkış penceresi: çalışmaya başladıktan sonraki launchWindow saniye (hedefin gerisinde durur, ceza yok).</summary>
-        public bool InLaunchWindow => Running && Time.time - launchStartTime < Difficulty.launchWindow;
+        /// <summary>Kalkış penceresi: salındıktan sonraki launchWindow saniye (kaza sayılmaz, biçmez).</summary>
+        public bool InLaunchWindow => Running && Time.time - releaseTime < Difficulty.launchWindow;
         /// <summary>Görünmezken yetişme ışınlanması sayısı (test).</summary>
         public int TeleportCount { get; private set; }
+        /// <summary>Tasmanın harvester'ı ileri ittiği fizik adımı sayısı (test).</summary>
+        public int LeashPullSteps { get; private set; }
         /// <summary>Kabin kamerası noktası (sürücü gözü, ileri bakar). Yoksa null.</summary>
         public Transform CabinView => cabinView;
-        /// <summary>Hedefe zaman açığı (sn): tablanın önünden açık / hedef hızı referansı (sunucuda; hedef yoksa sonsuz).</summary>
-        public float TimeGap => target != null && targetGap >= -Difficulty.behindTolerance && !float.IsInfinity(targetGap)
-            ? EffectiveGap / Mathf.Max(targetSpeedRef, Difficulty.timeGapMinSpeed) : float.PositiveInfinity;
-        /// <summary>Şu anki hedef zaman açığı τ* (baskı sürünmesi düşülmüş, sn).</summary>
-        public float CurrentTimeGapTarget => Mathf.Max(0f, Difficulty.timeGapTarget - creep);
-        /// <summary>Hedef hızı referansı (m/sn, sunucuda).</summary>
-        public float TargetSpeedRef => targetSpeedRef;
+        /// <summary>Davranış modu (sunucuda).</summary>
+        public Mode CurrentMode => mode;
+        /// <summary>Saldırı: hedef kaza yaptı, harvester üstüne geliyor.</summary>
+        public bool IsAttacking => mode == Mode.Saldiri;
+        /// <summary>Yarış bitti: collider'lar kapalı, kimse biçilmez (her makinede).</summary>
+        public bool IsGhost => ghost;
         /// <summary>Şu anki davranış (HUD ve test için, sunucuda).</summary>
         public string ModeName
         {
             get
             {
-                if (!Running) return "durdu";
-                if (target == null) return "hedef yok";
-                if (InLaunchWindow) return Launching ? "kalkış atağı" : "kalkış";
-                if (Punishing) return "av";
-                return TimeGap > Difficulty.timeGapBandHigh ? "yakalama" : "baskı (τ* " + CurrentTimeGapTarget.ToString("F2") + " sn)";
+                switch (mode)
+                {
+                    case Mode.Durdu: return "durdu";
+                    case Mode.HedefYok: return "hedef yok";
+                    case Mode.Geride: return "herkes geride";
+                    case Mode.Kalkis: return "kalkış";
+                    case Mode.Baski: return "baskı";
+                    case Mode.Yakalama: return "yeniden yakalama";
+                    case Mode.Saldiri: return "SALDIRI";
+                    case Mode.Bitti: return "yarış bitti (hayalet)";
+                }
+                return mode.ToString();
             }
         }
-        /// <summary>Önündeki en yakın arabaya pist boyunca açık (m, kökten; sunucuda).</summary>
-        public float NearestAheadGap => nearestAheadGap;
-        /// <summary>Tablanın önünün kök noktasından uzaklığı (m). Açık (gap) kökten ölçülür; baskı mesafesi tablanın önünden.</summary>
+        /// <summary>Tablanın önünün kök noktasından uzaklığı (m).</summary>
         public float HeaderReach => headerCollider != null ? headerCollider.center.z + headerCollider.size.z * 0.5f : 10f;
-        /// <summary>Av modu: hedef hata yaptı (yakında ve yavaş), harvester virajda daha sert ve tavansız gelir.</summary>
-        public bool Punishing => Running && Time.time < punishUntil;
         /// <summary>Makara dönüş hızı (derece/sn).</summary>
         public float ReelSpeed => reelSpeed;
         /// <summary>Tabla şu an biçiyor mu (makara yeterince hızlı).</summary>
-        public bool IsCutting => Running && reelSpeed >= reelCutSpeed;
+        public bool IsCutting => Running && !ghost && reelSpeed >= reelCutSpeed;
         /// <summary>Bu makine harvester'ı sürüyor mu: sunucuysa ya da ağ hiç çalışmıyorsa.</summary>
         public bool Simulates
         {
@@ -220,13 +245,31 @@ namespace Harvester.Race
         // Test ölçümleri
         public int CutCount { get; private set; }
         public int HitCount { get; private set; }
-        public int BarrierClampSteps { get; private set; }
 
-        /// <summary>Sadece sunucu: çalıştır/durdur. Durunca frenleyip durur, makara durur.</summary>
+        /// <summary>Sunucuda: araba kaza yapmış sayılıyor mu (saldırı tetikleyicisi).</summary>
+        public bool IsCrashed(RaceCar car)
+        {
+            CarWatch w;
+            return car != null && watches.TryGetValue(car, out w) && w.Crashed;
+        }
+
+        /// <summary>Sunucuda: arabanın son kaza tespit zamanı (Time.time; yoksa -100).</summary>
+        public float CrashTimeOf(RaceCar car)
+        {
+            CarWatch w;
+            return car != null && watches.TryGetValue(car, out w) ? w.CrashTime : -100f;
+        }
+
+        /// <summary>Sadece sunucu: çalıştır/durdur. Çalışmaya başlayınca kalkış penceresi başlar.</summary>
         public void SetRunning(bool running)
         {
             if (IsSpawned && !IsServer) return;
-            if (running && !Running) StartLaunch();
+            if (running && !Running)
+            {
+                releaseTime = Time.time;
+                leashLimit = float.PositiveInfinity;
+                foreach (var w in watches.Values) { w.Crashed = false; w.Initialized = false; }
+            }
             Running = running;
             runningSetExplicitly = true;
         }
@@ -251,36 +294,37 @@ namespace Harvester.Race
         public void PlaceAt(Vector3 worldPosition, Quaternion worldRotation)
         {
             if (!Simulates) return;
-            Vector3 flat = Vector3.ProjectOnPlane(worldRotation * Vector3.forward, Vector3.up);
-            yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat).eulerAngles.y : 0f;
-            position = worldPosition;
-            speed = yawRate = verticalSpeed = 0f;
-            aimLateral = 0f;
-            hasTrackHint = false;
+            var track = RaceTrack.Current;
+            speed = yawRate = lateralRate = 0f;
             target = null;
-            targetGap = float.PositiveInfinity;
+            targetGap = targetRootGap = float.PositiveInfinity;
+            leashLimit = float.PositiveInfinity;
             lateralHistoryCount = 0;
+            watches.Clear();
             stateInitialized = true;
-
-            Vector3 grounded, normal;
-            if (SampleGround(position, yaw, out grounded, out normal))
+            if (track != null && track.Length > 0f)
             {
-                position = grounded;
-                groundNormal = normal;
+                trackDistance = track.GetNearestDistance(worldPosition);
+                hasTrackHint = true;
+                lateral = Mathf.Clamp(track.GetLateralOffset(worldPosition, trackDistance), -LateralLimit, LateralLimit);
+                SetPoseOnTrack(track, true);
             }
-            else groundNormal = Vector3.up;
-            rotation = YawOnSlope(yaw, groundNormal);
-
+            else
+            {
+                Vector3 flat = Vector3.ProjectOnPlane(worldRotation * Vector3.forward, Vector3.up);
+                yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat).eulerAngles.y : 0f;
+                position = worldPosition;
+                rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
             body.position = position;
             body.rotation = rotation;
             transform.SetPositionAndRotation(position, rotation);
-            UpdateTrackDistance();
             if (IsSpawned && networkTransform != null && networkTransform.CanCommitToTransform)
                 networkTransform.Teleport(position, rotation, transform.localScale);
         }
 
         /// <summary>
-        /// Arabanın harvester'ın önünde pist boyunca ne kadar ileride olduğu (m). Turlu pistte sarar:
+        /// Arabanın harvester'ın önünde pist boyunca ne kadar ileride olduğu (m, kökten köke). Turlu pistte sarar:
         /// sonuç [-80, Length - 80) aralığında (80 m'ye kadar gerideki eksi). A'dan B'ye pistte geride olan eksi.
         /// </summary>
         public float GapTo(RaceCar car)
@@ -288,6 +332,12 @@ namespace Harvester.Race
             var track = RaceTrack.Current;
             if (track == null || car == null) return float.PositiveInfinity;
             return Gap(track, CarDistance(track, car));
+        }
+
+        /// <summary>Her makinede: tablanın önünden arabanın arkasına pist boyunca açık (m). HUD ve test bunu gösterir.</summary>
+        public float OpenGapTo(RaceCar car)
+        {
+            return GapTo(car) - HeaderReach - Difficulty.carRearOffset;
         }
 
         // ------------------------------------------------------------------ Yaşam döngüsü
@@ -299,6 +349,7 @@ namespace Harvester.Race
             body.isKinematic = true;
             body.useGravity = false;
             body.interpolation = RigidbodyInterpolation.Interpolate;
+            ownColliders = GetComponentsInChildren<Collider>(true);
 
             wheelBaseRotations = new Quaternion[wheels.Length];
             wheelSpin = new float[wheels.Length];
@@ -324,11 +375,7 @@ namespace Harvester.Race
             if (!IsSpawned && Simulates)
             {
                 InitializeState();
-                if (runWhenOffline && !runningSetExplicitly)
-                {
-                    StartLaunch();
-                    Running = true;
-                }
+                if (runWhenOffline && !runningSetExplicitly) SetRunning(true);
             }
         }
 
@@ -347,31 +394,10 @@ namespace Harvester.Race
             }
         }
 
-        private void StartLaunch()
-        {
-            launching = true;
-            launchStartTime = Time.time;
-        }
-
-        /// <summary>Kalkış atağının bitip bitmediğine karar verir (hedef seçiminden sonra).</summary>
-        private void UpdateLaunch(HarvesterDifficulty diff)
-        {
-            if (!launching || !Running) return;
-            bool timeout = Time.time - launchStartTime >= diff.launchMaxDuration;
-            // Baskı mesafesine girince hedefin hızı ne olursa olsun biter; pencerenin geri kalanında hedefin gerisinde durur
-            bool caughtUp = target != null && targetGap >= -diff.behindTolerance
-                            && targetGap - HeaderReach <= diff.pressureDistance;
-            if (timeout || caughtUp) launching = false;
-        }
-
         private void InitializeState()
         {
             if (stateInitialized) return;
-            position = transform.position;
-            rotation = transform.rotation;
-            Vector3 flat = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
-            yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat).eulerAngles.y : 0f;
-            stateInitialized = true;
+            PlaceAt(transform.position, transform.rotation);
         }
 
         // ------------------------------------------------------------------ Sunucu döngüsü
@@ -384,23 +410,24 @@ namespace Harvester.Race
             float dt = Time.fixedDeltaTime;
             var diff = Difficulty;
             if (appliedHeaderWidth != diff.headerWidth) ApplyHeaderWidth();
+            stepCounter++;
 
             if (track != null && track.Length > 0f)
             {
-                UpdateTrackDistance();
-                UpdateTarget(track, diff);
-                UpdateLaunch(diff);
+                UpdateCars(track, diff, dt);
+                UpdateMode(diff);
                 CheckCatchupTeleport(track, diff);
+                UpdateReel(diff, dt);
+                Drive(track, diff, dt);
+                if (Running && !ghost) CheckContacts(diff);
             }
             else
             {
                 target = null;
-                targetGap = nearestAheadGap = float.PositiveInfinity;
+                targetGap = float.PositiveInfinity;
+                mode = Running ? Mode.HedefYok : Mode.Durdu;
+                UpdateReel(diff, dt);
             }
-
-            UpdateReel(diff, dt);
-            Drive(track, diff, dt);
-            if (Running) CheckContacts(diff);
 
             if (IsSpawned)
             {
@@ -415,158 +442,92 @@ namespace Harvester.Race
         {
             var track = RaceTrack.Current;
             if (track == null) return;
-            trackDistance = track.GetNearestDistance(Simulates ? position : transform.position, hasTrackHint ? trackDistance : -1f, 40f);
+            trackDistance = track.GetNearestDistance(transform.position, hasTrackHint ? trackDistance : -1f, 40f);
             hasTrackHint = true;
         }
 
         /// <summary>Turlu pistte bu kadar gerideki araba "arkada" sayılır, daha gerisi bir tur önde (m).</summary>
         private const float BehindWindow = 80f;
-        /// <summary>Yanal hız sönümü (sn): hedef nokta yanal hız × bu kadar geri çekilir.</summary>
-        private const float LateralDamping = 0.35f;
 
         private float Gap(RaceTrack track, float carDistance)
         {
             float g = carDistance - trackDistance;
             if (track.Loop)
             {
-                // Arkadaki pencere: bu kadar gerideki araba "arkada" sayılır (bir tur önde değil)
                 float back = Mathf.Min(BehindWindow, track.Length * 0.25f);
                 g = Mathf.Repeat(g + back, track.Length) - back;
             }
             return g;
         }
 
+        private CarWatch WatchOf(RaceCar car)
+        {
+            CarWatch w;
+            if (!watches.TryGetValue(car, out w))
+            {
+                w = new CarWatch();
+                watches[car] = w;
+            }
+            return w;
+        }
+
         private float CarDistance(RaceTrack track, RaceCar car)
         {
-            float hint;
-            bool has = carDistanceCache.TryGetValue(car, out hint);
-            float d = track.GetNearestDistance(car.transform.position, has ? hint : -1f, 30f);
-            carDistanceCache[car] = d;
+            var w = WatchOf(car);
+            if (w.LastStep == stepCounter && w.DistanceHint >= 0f && Simulates) return w.DistanceHint;
+            float d = track.GetNearestDistance(car.transform.position, w.DistanceHint, 30f);
+            w.DistanceHint = d;
+            w.LastStep = stepCounter;
             return d;
         }
 
-        // ------------------------------------------------------------------ Görünmezken yetişme
-
-        /// <summary>Harvester'ın görülebildiği mesafe (m): ayardan ya da sisten.</summary>
-        public float VisibleDistance
+        /// <summary>Araba yarışıyor mu: elenmemiş, etkin, yarış yöneticisine göre bitirmemiş.</summary>
+        private static bool IsRacing(RaceCar car)
         {
-            get
-            {
-                var diff = Difficulty;
-                if (diff.visibleDistanceOverride > 0f) return diff.visibleDistanceOverride;
-                float d = 150f;
-                if (RenderSettings.fog)
-                {
-                    float keep = Mathf.Clamp(diff.fogVisibilityThreshold, 0.01f, 0.99f);
-                    switch (RenderSettings.fogMode)
-                    {
-                        case FogMode.Linear:
-                            // Doğrusal sis: görünürlük = (bitiş - d) / (bitiş - başlangıç)
-                            d = Mathf.Lerp(RenderSettings.fogEndDistance, RenderSettings.fogStartDistance, keep);
-                            break;
-                        case FogMode.Exponential:
-                            d = RenderSettings.fogDensity > 1e-5f ? -Mathf.Log(keep) / RenderSettings.fogDensity : 400f;
-                            break;
-                        default: // ExponentialSquared
-                            d = RenderSettings.fogDensity > 1e-5f ? Mathf.Sqrt(-Mathf.Log(keep)) / RenderSettings.fogDensity : 400f;
-                            break;
-                    }
-                }
-                return Mathf.Max(diff.minVisibleDistance, d);
-            }
+            if (car == null || car.IsEliminated || !car.isActiveAndEnabled) return false;
+            var manager = RaceManager.Instance;
+            return manager == null || !manager.isActiveAndEnabled || manager.IsCarRacing(car);
         }
 
-        /// <summary>
-        /// Lastik bant tavanı: önündeki en yakın araba (yoluna çıkacak "son" araba) maxGap'ten uzaktaysa ve hiçbir araba
-        /// harvester'ı göremiyorsa (hepsi görüş mesafesinin dışında), o arabanın maxGap gerisine ışınlanır. Hedef nokta da
-        /// hiçbir arabadan görünmemeli (turlu pistte iç saha karşısından görülebilir); değilse geriye doğru aranır.
-        /// "En yakın öndeki" tur farkını kendiliğinden çözer: harvester arabaları geçmediği için yoluna ilk çıkacak araba odur.
-        /// </summary>
-        private void CheckCatchupTeleport(RaceTrack track, HarvesterDifficulty diff)
-        {
-            if (!diff.catchupTeleport || !Running || launching || nearestAheadCar == null) return;
-            if (float.IsInfinity(nearestAheadGap) || nearestAheadGap <= diff.maxGap) return;
-            if (Time.time - lastTeleportTime < diff.teleportCooldown) return;
+        // ------------------------------------------------------------------ Arabalar: hız, kaza, hedef
 
-            float visible = VisibleDistance;
-            if (AnyCarWithin(position, visible)) return;
-
-            float carDistance = CarDistance(track, nearestAheadCar);
-            // maxGap'ten başlayarak hedef noktayı ara; görüş mesafesinden yakına inme
-            for (float gap = Mathf.Max(diff.maxGap, 1f); gap < nearestAheadGap - 10f; gap += 10f)
-            {
-                float d = track.WrapDistance(carDistance - gap);
-                Vector3 point = track.GetPoint(d);
-                if (AnyCarWithin(point, visible)) continue;
-                TeleportAlongTrack(track, d);
-                return;
-            }
-        }
-
-        private static bool AnyCarWithin(Vector3 point, float distance)
-        {
-            float d2 = distance * distance;
-            var all = RaceCar.All;
-            for (int i = 0; i < all.Count; i++)
-            {
-                var car = all[i];
-                if (car == null || car.IsEliminated || !car.isActiveAndEnabled) continue;
-                if ((car.transform.position - point).sqrMagnitude < d2) return true;
-            }
-            return false;
-        }
-
-        /// <summary>Sunucu: pist üzerinde verilen mesafeye ışınlar; hızı, hedefi ve kalkış durumunu korur.</summary>
-        private void TeleportAlongTrack(RaceTrack track, float distance)
-        {
-            Vector3 forward = track.GetForward(distance);
-            Vector3 flat = Vector3.ProjectOnPlane(forward, Vector3.up);
-            yaw = flat.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(flat).eulerAngles.y : yaw;
-            yawRate = 0f;
-            aimLateral = 0f;
-            verticalSpeed = 0f;
-            position = track.GetPoint(distance);
-            Vector3 grounded, normal;
-            if (SampleGround(position, yaw, out grounded, out normal))
-            {
-                position = grounded;
-                groundNormal = normal;
-            }
-            rotation = YawOnSlope(yaw, groundNormal);
-            trackDistance = distance;
-            hasTrackHint = true;
-            // Hedefin hızının altında kalmasın ki ışınlanınca hemen geri düşmesin
-            speed = Mathf.Max(speed, targetSpeedRef);
-
-            body.position = position;
-            body.rotation = rotation;
-            transform.SetPositionAndRotation(position, rotation);
-            if (IsSpawned && networkTransform != null && networkTransform.CanCommitToTransform)
-                networkTransform.Teleport(position, rotation, transform.localScale);
-            lastTeleportTime = Time.time;
-            TeleportCount++;
-        }
-
-        // ------------------------------------------------------------------ Hedef seçimi
-
-        private void UpdateTarget(RaceTrack track, HarvesterDifficulty diff)
+        private void UpdateCars(RaceTrack track, HarvesterDifficulty diff, float dt)
         {
             RaceCar bestAhead = null, bestBehind = null;
             float bestAheadGap = float.PositiveInfinity, bestBehindGap = float.NegativeInfinity;
-            float currentGap = float.PositiveInfinity;
-            bool currentValid = false;
+            bool launch = InLaunchWindow;
+            float kSmooth = 1f - Mathf.Exp(-dt / Mathf.Max(0.01f, diff.speedSmoothing));
+            float kAverage = 1f - Mathf.Exp(-dt / Mathf.Max(0.1f, diff.crashAverageTime));
 
+            nearestAnyGap = float.PositiveInfinity;
             var all = RaceCar.All;
             for (int i = 0; i < all.Count; i++)
             {
                 var car = all[i];
                 if (car == null || car.IsEliminated || !car.isActiveAndEnabled) continue;
-                float gap = Gap(track, CarDistance(track, car));
-                if (car == target)
+                float d = CarDistance(track, car);
+                float gap = Gap(track, d);
+                // Durma payı için bitirmiş arabalar da sayılır
+                if (gap >= -diff.behindTolerance) nearestAnyGap = Mathf.Min(nearestAnyGap, gap - HeaderReach - diff.carRearOffset);
+                if (!IsRacing(car)) continue;
+                var w = WatchOf(car);
+                float raw = Vector3.Dot(car.Velocity, track.GetForward(d));
+                w.RawSpeed = raw;
+                if (!w.Initialized)
                 {
-                    currentGap = gap;
-                    currentValid = gap >= -diff.behindTolerance;
+                    w.Initialized = true;
+                    w.Speed = w.Average = raw;
                 }
+                else
+                {
+                    float before = w.Speed;
+                    w.Speed = Mathf.Lerp(w.Speed, raw, kSmooth);
+                    w.Decel = (before - w.Speed) / dt;
+                    w.Average = Mathf.Lerp(w.Average, w.Speed, kAverage);
+                }
+                if (Running && !launch) UpdateCrash(track, diff, car, w, d);
+                else w.Crashed = false;
+
                 if (gap >= -diff.behindTolerance)
                 {
                     if (gap < bestAheadGap) { bestAheadGap = gap; bestAhead = car; }
@@ -574,60 +535,79 @@ namespace Harvester.Race
                 else if (gap > bestBehindGap) { bestBehindGap = gap; bestBehind = car; }
             }
 
-            nearestAheadGap = bestAheadGap;
-            nearestAheadCar = bestAhead;
-            RaceCar chosen = target;
-            if (!currentValid)
-            {
-                // Mevcut hedef yok, elendi ya da geride kaldı: öndeki en yakın, o da yoksa arkadaki en yakın
-                chosen = bestAhead != null ? bestAhead : bestBehind;
-            }
-            else if (bestAhead != null && bestAhead != target
-                     && bestAheadGap < currentGap - diff.targetSwitchMargin
-                     && Time.time - targetChosenAt >= diff.minTargetHold)
-            {
-                chosen = bestAhead; // histerezis: belirgin şekilde daha yakın olan varsa
-            }
-
+            RaceCar chosen = bestAhead != null ? bestAhead : bestBehind;
+            float rootGap = bestAhead != null ? bestAheadGap : bestBehindGap;
+            float open = chosen != null ? rootGap - HeaderReach - diff.carRearOffset : float.PositiveInfinity;
             if (chosen != target)
             {
                 target = chosen;
-                targetChosenAt = Time.time;
                 lateralHistoryCount = 0;
-                if (target != null) targetSpeedRef = targetSpeedSmoothed = Vector3.Dot(target.Velocity, track.GetForward(CarDistance(track, target)));
-                creep = 0f;
+                // Yeni hedef: tasma mevcut açıktan başlar ve kısalır (yeniden yakalama)
+                leashLimit = Mathf.Max(diff.leashMax, open);
             }
-
-            if (target == null)
-            {
-                targetGap = float.PositiveInfinity;
-                return;
-            }
-
-            float td = CarDistance(track, target);
-            targetGap = Gap(track, td);
-            float rawSpeed = Vector3.Dot(target.Velocity, track.GetForward(td));
-            targetSpeedSmoothed = Mathf.Lerp(targetSpeedSmoothed, rawSpeed, 1f - Mathf.Exp(-Time.fixedDeltaTime / 0.25f));
-            // Yarış temposu: hedefin bulunduğu yerde temiz süren bir arabanın hızı (virajları ve freni hesaba katar)
-            targetPace = TrackSpeedPlanner.SafeSpeed(track, td, Mathf.Max(rawSpeed, 1f), diff.paceTopSpeed, diff.paceLateralAcceleration, diff.paceBraking);
-            // Hata: tempodan belirgin şekilde yavaş (dönme, bariyer). Virajda frenlemek tempo düştüğü için hata sayılmaz.
-            // Kalkış penceresinde yok: kalkıştaki doğal yavaşlık hata sayılmaz.
-            if (!InLaunchWindow && targetGap >= -diff.behindTolerance && targetGap < diff.punishRange
-                && targetSpeedSmoothed < targetPace * diff.punishSpeedRatio)
-                punishUntil = Time.time + diff.punishHold;
-            // Referans: yükselişe hemen, düşüşe geç inanır. Av modunda yarış temposuna çekilir: harvester tempoyu korur.
-            if (Punishing) targetSpeedRef = Mathf.Max(Mathf.Max(targetSpeedRef, rawSpeed), targetPace);
-            else
-            {
-                float tc = rawSpeed > targetSpeedRef ? diff.targetSpeedRiseTime : diff.targetSpeedFallTime;
-                targetSpeedRef = Mathf.Lerp(targetSpeedRef, rawSpeed, 1f - Mathf.Exp(-Time.fixedDeltaTime / Mathf.Max(0.01f, tc)));
-            }
-            PushLateral(track.GetLateralOffset(target.transform.position, td));
+            targetRootGap = chosen != null ? rootGap : float.PositiveInfinity;
+            targetGap = open;
+            if (target != null) PushLateral(track.GetLateralOffset(target.transform.position, CarDistance(track, target)));
         }
 
-        private void PushLateral(float lateral)
+        /// <summary>
+        /// Kaza kuralı (açıklanabilir): araba devrik, ya da durdu (hız &lt; crashStopSpeed), ya da çarptı (frenle olamayacak
+        /// kadar sert yavaşlama &gt; crashImpactDecel ve hız ortalamanın crashImpactRatio katının altında), ya da hızı beklenenin
+        /// crashSpeedRatio katının altına ve en az crashMinSpeedLoss kadar düştü. Beklenen = min(son birkaç sn ortalaması,
+        /// pistin o yerinde temiz sürüşün hızı): virajdan önce fren yapan iyi sürücü kaza sayılmaz.
+        /// Kaza bayrağı araba biçilene ya da attackMaxDuration geçip araba toparlanana dek kalır.
+        /// </summary>
+        private void UpdateCrash(RaceTrack track, HarvesterDifficulty diff, RaceCar car, CarWatch w, float d)
         {
-            lateralHistory[lateralHistoryHead] = lateral;
+            float now = Time.time;
+            if (w.Crashed)
+            {
+                if (now - w.CrashTime > diff.attackMaxDuration && w.Speed > diff.crashStopSpeed * 2f && car.transform.up.y > diff.crashFlipUp)
+                {
+                    w.Crashed = false;
+                    w.Average = w.Speed; // toparlandı: ortalama yeniden başlasın
+                }
+                return;
+            }
+            string reason = null;
+            float expected = w.Average;
+            if (car.transform.up.y < diff.crashFlipUp) reason = "devrildi";
+            else if (w.Speed < diff.crashStopSpeed) reason = "durdu";
+            else
+            {
+                // Çarpma: sert yavaşlama anı 0.5 sn akılda tutulur; hız o sürede ortalamanın altına inerse kaza
+                if (w.Decel > diff.crashImpactDecel) w.ImpactTime = now;
+                if (now - w.ImpactTime < 0.5f && w.Speed < diff.crashImpactRatio * w.Average) reason = "çarptı";
+            }
+            if (reason == null && w.Speed < diff.crashSpeedRatio * w.Average && w.Average - w.Speed > diff.crashMinSpeedLoss)
+            {
+                // Sadece belirgin düşüşte temiz tempoya bak (pahalı hesap)
+                float pace = TrackSpeedPlanner.SafeSpeed(track, d, Mathf.Max(w.Average, 1f), diff.paceTopSpeed, diff.paceLateralAcceleration, diff.paceBraking);
+                expected = Mathf.Min(w.Average, pace);
+                if (w.Speed < diff.crashSpeedRatio * expected && expected - w.Speed > diff.crashMinSpeedLoss) reason = "yavaşladı";
+            }
+            if (reason == null) return;
+            w.Crashed = true;
+            w.CrashTime = now;
+            w.CrashReason = string.Format("{0}: hız {1:F1} m/sn, beklenen {2:F1} m/sn", reason, w.Speed, expected);
+            Debug.Log("[Harvester] kaza: " + car.name + " " + w.CrashReason);
+            if (OnCrashDetected != null) OnCrashDetected(car, w.CrashReason);
+        }
+
+        private void UpdateMode(HarvesterDifficulty diff)
+        {
+            if (!Running) mode = ghost ? Mode.Bitti : Mode.Durdu;
+            else if (target == null) mode = Mode.HedefYok;
+            else if (targetRootGap < -diff.behindTolerance) mode = Mode.Geride;
+            else if (InLaunchWindow) mode = Mode.Kalkis;
+            else if (IsCrashed(target)) mode = Mode.Saldiri;
+            else if (targetGap > diff.leashMax + 1f) mode = Mode.Yakalama;
+            else mode = Mode.Baski;
+        }
+
+        private void PushLateral(float value)
+        {
+            lateralHistory[lateralHistoryHead] = value;
             lateralHistoryTime[lateralHistoryHead] = Time.time;
             lateralHistoryHead = (lateralHistoryHead + 1) % lateralHistory.Length;
             lateralHistoryCount = Mathf.Min(lateralHistoryCount + 1, lateralHistory.Length);
@@ -649,9 +629,86 @@ namespace Harvester.Race
             return value;
         }
 
+        // ------------------------------------------------------------------ Görünmezken yetişme
+
+        /// <summary>Harvester'ın görülebildiği mesafe (m): ayardan ya da sisten.</summary>
+        public float VisibleDistance
+        {
+            get
+            {
+                var diff = Difficulty;
+                if (diff.visibleDistanceOverride > 0f) return diff.visibleDistanceOverride;
+                float d = 150f;
+                if (RenderSettings.fog)
+                {
+                    float keep = Mathf.Clamp(diff.fogVisibilityThreshold, 0.01f, 0.99f);
+                    switch (RenderSettings.fogMode)
+                    {
+                        case FogMode.Linear:
+                            d = Mathf.Lerp(RenderSettings.fogEndDistance, RenderSettings.fogStartDistance, keep);
+                            break;
+                        case FogMode.Exponential:
+                            d = RenderSettings.fogDensity > 1e-5f ? -Mathf.Log(keep) / RenderSettings.fogDensity : 400f;
+                            break;
+                        default: // ExponentialSquared
+                            d = RenderSettings.fogDensity > 1e-5f ? Mathf.Sqrt(-Mathf.Log(keep)) / RenderSettings.fogDensity : 400f;
+                            break;
+                    }
+                }
+                return Mathf.Max(diff.minVisibleDistance, d);
+            }
+        }
+
+        /// <summary>
+        /// Son çare: hedef teleportGap'ten uzaktaysa ve hiçbir araba harvester'ı göremiyorsa, hedefin gerisinde hiçbir
+        /// arabadan görünmeyen en yakın noktaya ışınlanır. Kalan mesafeyi tasma kapatır.
+        /// </summary>
+        private void CheckCatchupTeleport(RaceTrack track, HarvesterDifficulty diff)
+        {
+            if (!diff.catchupTeleport || !Running || target == null || float.IsInfinity(targetGap)) return;
+            if (targetRootGap < -diff.behindTolerance || targetGap <= diff.teleportGap) return;
+            if (Time.time - lastTeleportTime < diff.teleportCooldown) return;
+
+            float visible = VisibleDistance;
+            if (AnyCarWithin(position, visible)) return;
+
+            float carDistance = CarDistance(track, target);
+            for (float gap = visible; gap < targetRootGap - 10f; gap += 10f)
+            {
+                float d = track.WrapDistance(carDistance - gap);
+                if (AnyCarWithin(track.GetPoint(d), visible)) continue;
+                trackDistance = d;
+                SetPoseOnTrack(track, true);
+                body.position = position;
+                body.rotation = rotation;
+                transform.SetPositionAndRotation(position, rotation);
+                if (IsSpawned && networkTransform != null && networkTransform.CanCommitToTransform)
+                    networkTransform.Teleport(position, rotation, transform.localScale);
+                lastTeleportTime = Time.time;
+                TeleportCount++;
+                targetRootGap = Gap(track, carDistance);
+                targetGap = targetRootGap - HeaderReach - diff.carRearOffset;
+                leashLimit = Mathf.Max(diff.leashMax, targetGap);
+                return;
+            }
+        }
+
+        private static bool AnyCarWithin(Vector3 point, float distance)
+        {
+            float d2 = distance * distance;
+            var all = RaceCar.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var car = all[i];
+                if (car == null || car.IsEliminated || !car.isActiveAndEnabled) continue;
+                if ((car.transform.position - point).sqrMagnitude < d2) return true;
+            }
+            return false;
+        }
+
         // ------------------------------------------------------------------ Sürüş
 
-        /// <summary>Pistin ortasından izin verilen en büyük yana sapma (m).</summary>
+        /// <summary>Pistin ortasından izin verilen en büyük yana kayma (m).</summary>
         public float LateralLimit
         {
             get
@@ -665,183 +722,118 @@ namespace Harvester.Race
 
         private float BodyHalfWidth => bodyCollider != null ? bodyCollider.size.x * 0.5f : 4.4f;
 
+        /// <summary>Hıza göre hedef hız: modlara göre (formüller HarvesterDifficulty belgesinde).</summary>
+        private float DesiredSpeed(HarvesterDifficulty diff)
+        {
+            if (!Running) return 0f;
+            float vc = target != null ? WatchOf(target).Speed : 0f;
+            switch (mode)
+            {
+                case Mode.HedefYok: return diff.cruiseSpeed;
+                case Mode.Geride: return Mathf.Max(diff.cruiseSpeed * 0.4f, vc - 6f); // yanımıza gelsinler
+                case Mode.Saldiri: return Mathf.Max(0f, vc) + diff.attackClosingSpeed;
+            }
+            // Kalkış, baskı, yakalama: açığı pressureGap'e yumuşak oturt
+            float e = targetGap - diff.pressureGap;
+            float c = e >= 0f ? Mathf.Min(diff.gapGain * e, Mathf.Sqrt(2f * diff.softLandingDecel * e))
+                              : Mathf.Max(diff.gapGain * e, -diff.maxBackoff);
+            return Mathf.Max(0f, vc + c);
+        }
+
         private void Drive(RaceTrack track, HarvesterDifficulty diff, float dt)
         {
-            float desiredSpeed = 0f;
-            float desiredYawRate = 0f;
+            float desired = Mathf.Min(DesiredSpeed(diff), diff.maxSpeed);
+            float rate = !Running ? diff.stopDeceleration : desired > speed ? diff.acceleration : diff.braking;
+            speed = Mathf.MoveTowards(speed, desired, rate * dt);
+            float advance = speed * dt;
 
-            if (track != null && track.Length > 0f)
+            // Tasma ve en küçük açık: pist boyunca kesin sınırlar (fizik yok sayılır)
+            if (Running && target != null && targetRootGap >= -diff.behindTolerance)
             {
-                float limit = LateralLimit;
-
-                // Yanal hedef: kovalanan arabanın (gecikmeli) yanal konumu; uzaktayken yolun ortası
-                float wantLateral = 0f;
-                if (target != null && targetGap >= -diff.behindTolerance)
+                var w = WatchOf(target);
+                // Araba bu adımda da ilerleyecek: sınırı adımın sonuna göre koy
+                float predicted = targetGap + Mathf.Max(0f, w.RawSpeed) * dt;
+                // Yeniden yakalama: tasma leashReelInSpeed ile kısalır, sona doğru leashLandingDecel ile yavaşlayarak oturur
+                float excess = Mathf.Max(0f, Mathf.Min(leashLimit, targetGap) - diff.leashMax);
+                float reel = Mathf.Min(diff.leashReelInSpeed, Mathf.Sqrt(2f * diff.leashLandingDecel * excess) + 1f);
+                leashLimit = Mathf.Max(diff.leashMax, Mathf.Min(leashLimit, targetGap) - reel * dt);
+                if (predicted - advance > leashLimit)
                 {
-                    float weight = Mathf.InverseLerp(90f, 35f, targetGap);
-                    wantLateral = DelayedTargetLateral(diff.reactionDelay) * weight;
+                    advance = predicted - leashLimit;
+                    LeashPullSteps++;
                 }
-                // Biraz içeride hedefle: takip gecikmesiyle taşma bariyer payını yemesin
-                float aimLimit = Mathf.Max(0f, limit - 0.4f);
-                wantLateral = Mathf.Clamp(wantLateral, -aimLimit, aimLimit);
-                aimLateral = Mathf.MoveTowards(aimLateral, wantLateral, diff.lateralAimSpeed * dt);
-
-                // Saf takip: hızla uzayan bakış payı kadar ilerideki nokta
-                float look = Mathf.Clamp(8f + speed * 0.45f, 10f, 32f);
-                float aimDistance = trackDistance + look;
-                // Saf takip virajda içe keser (yay ile kiriş farkı ≈ bakış² × eğrilik / 8). Hedef noktayı o kadar dışa
-                // kaydır ki harvester istenen yanal konumda kalsın ve bariyere sürtünmesin.
-                Vector3 f0 = track.GetForward(trackDistance), f1 = track.GetForward(aimDistance);
-                f0.y = 0f;
-                f1.y = 0f;
-                float turn = Vector3.SignedAngle(f0, f1, Vector3.up) * Mathf.Deg2Rad; // sağa dönüş artı
-                float sagitta = Mathf.Clamp(look * turn / 8f, -3f, 3f);
-                // Sınırı aştıysa (yana kaçan hedefi kovalarken virajda) içeri doğru ek düzeltme
-                float actualLateral = track.GetLateralOffset(position, trackDistance);
-                float excess = actualLateral - Mathf.Clamp(actualLateral, -limit, limit);
-                // Yanal hız sönümü (PD): yana hızla kayarken hedefi erkenden geri çek, sınırı aşıp bariyere taşmasın
-                float headingError = Mathf.DeltaAngle(Quaternion.LookRotation(f0.sqrMagnitude > 1e-6f ? f0 : Vector3.forward).eulerAngles.y, yaw);
-                float lateralVelocity = speed * Mathf.Sin(headingError * Mathf.Deg2Rad);
-                Vector3 aimPoint = track.GetPoint(aimDistance) + track.GetRight(aimDistance)
-                                   * (aimLateral - sagitta - excess * 2f - lateralVelocity * LateralDamping);
-                Vector3 toAim = aimPoint - position;
-                toAim.y = 0f;
-                if (toAim.sqrMagnitude > 0.01f)
+                if (mode != Mode.Saldiri)
                 {
-                    float error = Mathf.DeltaAngle(yaw, Quaternion.LookRotation(toAim).eulerAngles.y);
-                    float maxRate = Mathf.Min(diff.turnRate, LateralAcceleration(diff) / Mathf.Max(1f, speed) * Mathf.Rad2Deg);
-                    desiredYawRate = Mathf.Clamp(error * 2.5f, -maxRate, maxRate);
+                    float minGap = InLaunchWindow ? diff.launchMinGap : diff.pressureMinGap;
+                    if (predicted - advance < minGap) advance = Mathf.Max(0f, predicted - minGap);
                 }
-
-                desiredSpeed = Running ? DesiredSpeed(track, diff) : 0f;
+                speed = advance / dt;
             }
-
-            // Hız ve dönüş, ivme sınırlarıyla
-            float accel = desiredSpeed > speed ? (InLaunchWindow ? diff.launchAcceleration : diff.acceleration) : diff.braking;
-            speed = Mathf.MoveTowards(speed, desiredSpeed, accel * dt);
-            if (speed < 0.05f && desiredSpeed <= 0f) desiredYawRate = 0f; // dururken yerinde dönmesin
-            yawRate = Mathf.MoveTowards(yawRate, desiredYawRate * Mathf.Clamp01(speed / 2f), diff.yawAcceleration * dt);
-            yaw = Mathf.Repeat(yaw + yawRate * dt, 360f);
-
-            Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-            Vector3 next = position + forward * speed * dt;
-
-            // Bariyerlerin içinde kal
-            if (track != null && track.Length > 0f)
+            else if (!Running && advance > 0f && !float.IsInfinity(nearestAnyGap))
             {
-                float d = track.GetNearestDistance(next, trackDistance, 20f);
-                float lateral = track.GetLateralOffset(next, d);
-                float hard = LateralLimit + 0.3f; // en geniş yer bariyerin iç yüzüne 0.5 m kalır
-                if (Mathf.Abs(lateral) > hard)
-                {
-                    Vector3 right = track.GetRight(d);
-                    next -= right * (lateral - Mathf.Clamp(lateral, -hard, hard));
-                    BarrierClampSteps++;
-                }
+                // Dururken (yarış bitti) öndeki arabaların içinden geçmesin: pressureMinGap gerisinde durur
+                advance = Mathf.Min(advance, Mathf.Max(0f, nearestAnyGap - diff.pressureMinGap));
+                speed = advance / dt;
             }
-
-            // Zemine otur
-            // Yön tam olarak yaw'dan gelir; sadece eğim (zemin normali) yumuşatılır, gövde dönüşte geri kalmasın.
-            Vector3 grounded, normal;
-            if (SampleGround(next, yaw, out grounded, out normal))
+            if (!track.Loop)
             {
-                verticalSpeed = 0f;
-                float k = 1f - Mathf.Exp(-dt / 0.06f);
-                next.y = grounded.y > position.y + 1.5f || grounded.y < position.y - 1.5f ? grounded.y : Mathf.Lerp(position.y, grounded.y, k);
-                groundNormal = Vector3.Slerp(groundNormal, normal, 1f - Mathf.Exp(-dt / 0.08f));
+                float left = track.Length - 15f - trackDistance;
+                advance = Mathf.Clamp(advance, 0f, Mathf.Max(0f, left));
+                speed = advance / dt;
             }
-            else
-            {
-                // Zemin yok: düş; çok düşerse piste geri koy
-                verticalSpeed += Physics.gravity.y * dt;
-                next.y = position.y + verticalSpeed * dt;
-                groundNormal = Vector3.Slerp(groundNormal, Vector3.up, 1f - Mathf.Exp(-dt / 0.3f));
-                if (track != null && next.y < track.GetPoint(trackDistance).y - 30f)
-                {
-                    PlaceAt(track.GetPoint(trackDistance) + Vector3.up * 2f, Quaternion.LookRotation(track.GetForward(trackDistance)));
-                    return;
-                }
-            }
+            trackDistance = track.WrapDistance(trackDistance + advance);
 
-            rotation = YawOnSlope(yaw, groundNormal);
-            position = next;
+            // Yanal: hedefin yanal konumu (baskıda gecikmeli, saldırıda anlık); uzaktayken yolun ortası
+            float limit = Mathf.Max(0f, LateralLimit - 0.2f);
+            float want = 0f;
+            float lateralSpeed = diff.lateralAimSpeed;
+            if (target != null && targetRootGap >= -diff.behindTolerance && Running)
+            {
+                if (mode == Mode.Saldiri)
+                {
+                    want = track.GetLateralOffset(target.transform.position, CarDistance(track, target));
+                    lateralSpeed = diff.attackLateralSpeed;
+                }
+                else want = DelayedTargetLateral(diff.reactionDelay) * Mathf.InverseLerp(70f, 35f, targetGap);
+            }
+            want = Mathf.Clamp(want, -limit, limit);
+            float newLateral = Mathf.MoveTowards(lateral, want, lateralSpeed * dt);
+            lateralRate = (newLateral - lateral) / dt;
+            lateral = newLateral;
+
+            SetPoseOnTrack(track, false);
             body.MovePosition(position);
             body.MoveRotation(rotation);
         }
 
-        /// <summary>Tablanın önünden hedefe açık (m); hedef yoksa ya da arkadaysa 0.</summary>
-        private float EffectiveGap => target != null && targetGap >= 0f && !float.IsInfinity(targetGap) ? Mathf.Max(0f, targetGap - HeaderReach) : 0f;
-
-        private float LateralAcceleration(HarvesterDifficulty diff)
+        /// <summary>Pist mesafesi + yanal kaymadan konum, zeminden yükseklik ve eğim, pist yönünden gövde yönü.</summary>
+        private void SetPoseOnTrack(RaceTrack track, bool snap)
         {
-            // Uzaktayken virajı daha sert alır (oyuncu görmüyor); av modunda da
-            float boost = Mathf.Max(diff.CornerBoostForGap(EffectiveGap), Punishing ? diff.punishCornerBoost : 1f);
-            return diff.lateralAcceleration * boost;
-        }
+            float dt = Time.fixedDeltaTime;
+            Vector3 forward = track.GetForward(trackDistance);
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-6f) forward = Vector3.forward;
+            forward.Normalize();
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            Vector3 next = track.GetPoint(trackDistance) + right * lateral;
+            // Yanal kayarken gövde o yöne hafifçe döner
+            Vector3 heading = forward * Mathf.Max(1f, speed) + right * lateralRate;
+            float wantYaw = Quaternion.LookRotation(heading).eulerAngles.y;
+            float newYaw = snap ? wantYaw : Mathf.LerpAngle(yaw, wantYaw, 1f - Mathf.Exp(-dt / Mathf.Max(0.01f, Difficulty.headingSmoothing)));
+            yawRate = snap ? 0f : Mathf.DeltaAngle(yaw, newYaw) / dt;
+            yaw = Mathf.Repeat(newYaw, 360f);
 
-        /// <summary>Lastik bant: hedefe göre istenen hız, viraj sınırıyla.</summary>
-        private float DesiredSpeed(RaceTrack track, HarvesterDifficulty diff)
-        {
-            float desired;
-            if (target == null)
+            Vector3 grounded, normal;
+            if (SampleGround(next, yaw, out grounded, out normal))
             {
-                desired = diff.cruiseSpeed;
+                float k = snap ? 1f : 1f - Mathf.Exp(-dt / 0.06f);
+                next.y = Mathf.Abs(grounded.y - position.y) > 1.5f ? grounded.y : Mathf.Lerp(position.y, grounded.y, k);
+                groundNormal = snap ? normal : Vector3.Slerp(groundNormal, normal, 1f - Mathf.Exp(-dt / 0.08f));
             }
-            else if (targetGap < -diff.behindTolerance)
-            {
-                // Herkes geride (yakınımızda): yavaşla, yanımıza gelsinler; yanımıza gelen hedef olur.
-                // En az bir hızla gider: duran harvester'ın arkasına sıkışan arabayla kilitlenmesin
-                desired = Mathf.Max(diff.cruiseSpeed * 0.4f, targetSpeedSmoothed - 6f);
-            }
-            else
-            {
-                // Zaman açığı modeli (açıklaması sınıf belgesinde ve HarvesterDifficulty'de):
-                //   g  = tablanın önünden hedefe açık (m),  v_r = hedef hızı referansı (asimetrik süzgeç)
-                //   g* = max(g_min, τ*·max(v_r, v_min))     hedeflenen açık
-                //   e  = g − g*                              açık hatası
-                //   c  = e ≥ 0 ? min(Kp·e, √(2·a_soft·e))   yakalama, banda yumuşak oturma
-                //            : max(Kp·e, −c_geri)            çok yakın: az geri çekil (baskı)
-                //   v  = min(v_r + c, tavan(g)), viraj ve fren sınırları ayrıca
-                float gap = EffectiveGap;
-                float vr = Mathf.Max(0f, targetSpeedRef);
-                bool window = InLaunchWindow;
-                float gMin = diff.launchHoldGap;
-                // Baskı sürünmesi: bantta kaldıkça τ* daralır; hedef açığı açınca sıfırlanır
-                float vRef = Mathf.Max(vr, diff.timeGapMinSpeed);
-                float tau = gap / vRef;
-                if (window || tau > diff.timeGapTarget + diff.creepResetMargin) creep = 0f;
-                else if (!Punishing) creep = Mathf.Min(diff.timeGapTarget, creep + diff.pressureCreepRate * Time.fixedDeltaTime);
-                float tauStar = Mathf.Max(0f, diff.timeGapTarget - creep);
-                float gStar = window ? Mathf.Max(gMin, tauStar * vRef) : tauStar * vRef;
-                float e = gap - gStar;
-                float c;
-                if (e >= 0f)
-                {
-                    // Kalkış atağı aynı yasanın sert hâli: Kp sınırı yok, oturma yavaşlaması daha büyük
-                    c = window && Launching ? Mathf.Sqrt(2f * diff.launchLandingDecel * e)
-                                            : Mathf.Min(diff.gapGain * e, Mathf.Sqrt(2f * diff.softLandingDecel * e));
-                }
-                else c = Mathf.Max(diff.gapGain * e, window ? float.NegativeInfinity : -diff.maxBackoff); // kalkışta tam geri çekilir
-                if (Punishing) c = Mathf.Max(c, diff.punishClosingSpeed);
+            else groundNormal = Vector3.Slerp(groundNormal, Vector3.up, snap ? 1f : 1f - Mathf.Exp(-dt / 0.3f));
 
-                float cap;
-                if (window && Launching) cap = diff.launchMaxSpeed;               // kalkış: bant dışından yakalama, yüksek tavan
-                else if (window) cap = Mathf.Max(diff.SpeedCapForGap(gap), vr + 3f); // sürü hızlanırken geri düşmesin
-                else cap = diff.SpeedCapForGap(gap);
-                if (Punishing && gap <= diff.pressureDistance) cap = Mathf.Max(cap, diff.punishSpeedCap);
-                desired = Mathf.Clamp(vr + c, 0f, cap);
-            }
-
-            float top = Launching ? Mathf.Max(diff.maxSpeed, diff.launchMaxSpeed) : diff.maxSpeed;
-            desired = Mathf.Min(desired, top);
-            desired = Mathf.Min(desired, TrackSpeedPlanner.SafeSpeed(track, trackDistance, speed, top, LateralAcceleration(diff), diff.braking));
-            if (!track.Loop)
-            {
-                // A'dan B'ye pistin sonunda dur
-                float left = track.Length - trackDistance - 15f;
-                desired = Mathf.Min(desired, Mathf.Sqrt(Mathf.Max(0f, 2f * diff.braking * left)));
-            }
-            return desired;
+            position = next;
+            rotation = YawOnSlope(yaw, groundNormal);
         }
 
         /// <summary>
@@ -921,8 +913,9 @@ namespace Harvester.Race
         private void UpdateReel(HarvesterDifficulty diff, float dt)
         {
             float want = 0f;
-            // Hedef ya da başka bir araba tablaya yaklaşınca biçme hızına çık
-            if (Running) want = Mathf.Min(targetGap, nearestAheadGap) < diff.mowingRange ? reelMowSpeed : reelIdleSpeed;
+            // Kalkış penceresinde ve yarış bitince biçmez; saldırıda ya da hedef yakınken biçme hızında
+            if (Running && !ghost)
+                want = !InLaunchWindow && (mode == Mode.Saldiri || targetGap < diff.mowingRange) ? reelMowSpeed : reelIdleSpeed;
             reelSpeed = Mathf.MoveTowards(reelSpeed, want, reelAcceleration * dt);
         }
 
@@ -946,6 +939,8 @@ namespace Harvester.Race
             {
                 var car = CarOf(overlapBuffer[i]);
                 if (car == null || car.IsEliminated || !touchedThisStep.Add(car)) continue;
+                // Bitirmiş arabaya dokunulmaz; biçme sadece yarışan arabaya
+                if (!IsRacing(car)) continue;
                 if (cutting) Cut(car);
                 else Ram(car, diff, true);
             }
@@ -959,6 +954,7 @@ namespace Harvester.Race
             {
                 var car = CarOf(overlapBuffer[i]);
                 if (car == null || car.IsEliminated || !touchedThisStep.Add(car)) continue;
+                if (!IsRacing(car)) continue;
                 Ram(car, diff, false);
             }
         }
@@ -978,6 +974,9 @@ namespace Harvester.Race
 
         private void Cut(RaceCar car)
         {
+            CarWatch w;
+            float since = watches.TryGetValue(car, out w) && w.Crashed ? Time.time - w.CrashTime : -1f;
+            Debug.Log("[Harvester] biçti: " + car.name + (since >= 0f ? string.Format(" (kazadan {0:F1} sn sonra; {1})", since, w.CrashReason) : " (kaza tespiti yok)"));
             car.Eliminate();
             CutCount++;
             if (OnCarCut != null) OnCarCut(car);
@@ -996,7 +995,7 @@ namespace Harvester.Race
             float side = local.x >= 0f ? 1f : -1f;
             Vector3 harvesterVelocity = forward * speed;
             Vector3 relative = harvesterVelocity - car.Velocity;
-            float speedFactor = Mathf.Clamp01(speed / Mathf.Max(1f, diff.maxSpeed));
+            float speedFactor = Mathf.Clamp01(speed / 40f);
 
             float bodyRear = bodyCollider.center.z - bodyCollider.size.z * 0.5f;
             Vector3 change;
@@ -1046,6 +1045,7 @@ namespace Harvester.Race
                 if (!Simulates) hasTrackHint = false;
             }
 
+            UpdateGhost();
             if (!Simulates)
             {
                 reelSpeed = Mathf.MoveTowards(reelSpeed, netReelSpeed.Value, reelAcceleration * dt);
@@ -1083,6 +1083,21 @@ namespace Harvester.Race
                 float steer = i >= 2 ? rearSteer : 0f;
                 wheel.localRotation = Quaternion.AngleAxis(steer, axisUp) * Quaternion.AngleAxis(wheelSpin[i], axisRight) * wheelBaseRotations[i];
             }
+        }
+
+        /// <summary>
+        /// Yarış bitince (her makinede, faz ağdan gelir) harvester hayalet olur: collider'ları kapanır, boşta kayan arabalar
+        /// içinden geçer, kimse biçilmez ya da savrulmaz.
+        /// </summary>
+        private void UpdateGhost()
+        {
+            var manager = RaceManager.Instance;
+            bool want = manager != null && manager.isActiveAndEnabled && manager.Phase == RacePhase.Finished;
+            if (want == ghost) return;
+            ghost = want;
+            if (ownColliders != null)
+                foreach (var c in ownColliders) if (c != null) c.enabled = !ghost;
+            if (ghost) Debug.Log("[Harvester] yarış bitti: collider'lar kapandı, biçme yok");
         }
 
         private void ApplyHeaderWidth()

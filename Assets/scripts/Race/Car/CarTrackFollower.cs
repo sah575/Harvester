@@ -41,6 +41,9 @@ namespace Harvester.Race
         public bool UseHandbrake = false;
         [Tooltip("Araba merkezi yol kenarından bu kadar dışarıdaysa pistten çıkmış sayılır (m)")]
         public float OffTrackMargin = 2f;
+        [Tooltip("Tam gaz (acemi/kullanıcı gibi): gaz hiç bırakılmaz, virajda fren ve el freni yok, gerekirse duvara çarpar. " +
+                 "Direksiyon yine pisti izler; takılınca/devrilince kurtarma (R gibi) çalışır.")]
+        public bool FullThrottle;
         [Tooltip("Tur ve takılma olaylarını konsola yazsın")]
         public bool LogEvents = true;
 
@@ -132,6 +135,13 @@ namespace Harvester.Race
             float steerAngle = Mathf.Atan(curvature * car.WheelBase) * Mathf.Rad2Deg;
             float steer = steerAngle / Mathf.Max(1f, car.CurrentMaxSteerAngle);
             if (local.z < 0f) steer = Mathf.Sign(local.x); // hedef arkada kaldıysa tam kır
+
+            if (FullThrottle)
+            {
+                TargetSpeed = car.TopSpeed;
+                car.SetExternalInput(1f, Mathf.Clamp(steer, -1f, 1f), false);
+                return;
+            }
 
             // --- Hız planı ---
             TargetSpeed = PlanSpeed(track, d, speed) * SpeedScale;

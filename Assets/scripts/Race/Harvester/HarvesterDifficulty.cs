@@ -3,10 +3,22 @@ using UnityEngine;
 namespace Harvester.Race
 {
     /// <summary>
-    /// Harvester yapay zekâsının bütün zorluk ayarları tek yerde. Her seviye ayrı bir varlık (asset);
+    /// Harvester yapay zekâsının bütün ayarları tek yerde. Her seviye ayrı bir varlık (asset);
     /// "Seviye 1" varsayılanı <c>Assets/scripts/Race/Harvester/Data/HarvesterSeviye1.asset</c>.
-    /// Silahlar (roket, yağ, makineli) ileride buraya kendi başlıklarıyla eklenecek; HarvesterAI ayarları
-    /// her FixedUpdate'te buradan okur, yani yarış sırasında seviye değiştirmek (SetDifficulty) anında etki eder.
+    /// HarvesterAI ayarları her FixedUpdate'te buradan okur, yani yarış sırasında seviye değiştirmek (SetDifficulty) anında etki eder.
+    ///
+    /// Model (14 Kasım 2026, kullanıcı tasarımı): "arkanda hissetmelisin, hata affı yok".
+    ///   açık g   = hedef arabanın pist boyunca harvester'ın önündeki mesafesi − tabla uzunluğu − carRearOffset
+    ///              (tablanın önünden arabanın arkasına, m). Hedef: önündeki en geride kalan, elenmemiş, bitirmemiş araba.
+    ///   Tasma    : g hiçbir zaman leashMax'ı geçmez (kalkış hariç). Geçecekse harvester pist boyunca o kadar ileri itilir
+    ///              (fizik yok sayılır, viraj yavaşlaması yok). Hedef değişince tasma mevcut açıktan başlar ve
+    ///              leashReelInSpeed ile leashMax'a çekilir (yeniden yakalama).
+    ///   Baskı    : v = v_araba + c,  c = e ≥ 0 ? min(Kp·e, √(2·a·e)) : max(Kp·e, −maxBackoff),  e = g − pressureGap.
+    ///              Saldırı yokken g en az pressureMinGap'te tutulur: kaza yapmayan araba biçilmez.
+    ///   Kaza     : v_s < crashSpeedRatio · beklenen ve (beklenen − v_s) > crashMinSpeedLoss, ya da v_s < crashStopSpeed,
+    ///              ya da çarptı (yavaşlama > crashImpactDecel ve v_s < crashImpactRatio · ortalama), ya da araba devrik. beklenen = min(son ~crashAverageTime sn ortalaması, pistin o yerindeki temiz tempo).
+    ///   Saldırı  : kaza yapan hedefe v = v_araba + attackClosingSpeed ile gelir, alt sınır yok, makara biçer.
+    ///   Kalkış   : ilk launchWindow sn kaza sayılmaz, makara biçmez, açık en az launchMinGap.
     /// </summary>
     [CreateAssetMenu(menuName = "Harvester/Harvester Zorluk Seviyesi", fileName = "HarvesterSeviye")]
     public class HarvesterDifficulty : ScriptableObject
@@ -16,94 +28,88 @@ namespace Harvester.Race
         [Tooltip("Oyunda gösterilecek ad")]
         public string displayName = "Seviye 1";
 
-        [Header("Hız")]
-        [Tooltip("Mutlak en yüksek hız (m/sn). Asıl tavan açığa göre catchupSpeedCurve'den gelir; bu sadece üst sınır. Arabanın son hızı ~40 m/sn.")]
-        public float maxSpeed = 75f;
+        [Header("Hız (fizik dışı, kinematik)")]
+        [Tooltip("En yüksek hız (m/sn). Arabaların son hızı 38–43 m/sn; yeniden yakalamada harvester bunun çok üstüne çıkabilir.")]
+        public float maxSpeed = 100f;
         [Tooltip("Hedef yokken gezinme hızı (m/sn)")]
         public float cruiseSpeed = 30f;
-        [Tooltip("Hızlanma (m/sn²)")]
-        public float acceleration = 8f;
-        [Tooltip("Yavaşlama/fren (m/sn²)")]
-        public float braking = 14f;
-        [Tooltip("Virajda en büyük yanal ivme (m/sn²). Viraj hızı = karekök(bu × yarıçap). Arabanın test sürücüsü 13, en fazla ~15; bunun altında kalmalı ki iyi sürücü virajda açabilsin.")]
-        public float lateralAcceleration = 13f;
+        [Tooltip("Hızlanma (m/sn²). Arabadan yüksek olmalı ki tasma nadiren devreye girsin.")]
+        public float acceleration = 25f;
+        [Tooltip("Yavaşlama (m/sn²). Arabanın freninden (~22) yüksek olmalı ki fren yapan arabaya kendiliğinden yaklaşmasın.")]
+        public float braking = 35f;
+        [Tooltip("Çalışmıyorken (geri sayım, yarış bitti) durma yavaşlaması (m/sn²)")]
+        public float stopDeceleration = 8f;
 
-        [Header("Zaman açığı modeli")]
-        [Tooltip("Hedef zaman açığı τ* (sn): tablanın önü ile hedef arası açık / hedefin hızı. Baskıda harvester buraya yumuşakça oturur. " +
-                 "Hata payı bundan gelir: bundan büyük bir zaman kaybı biçilmek demek.")]
-        public float timeGapTarget = 0.6f;
-        [Tooltip("Bandın üst ucu (sn). Bunun üstü 'yakalama', altı 'baskı' (sadece etiket ve test; kontrolcü τ*'a çalışır).")]
-        public float timeGapBandHigh = 1.5f;
-        [Tooltip("Zaman açığı hesabında hedef hızının alt sınırı (m/sn): yavaş/duran hedefte açık sıfıra çökmesin")]
-        public float timeGapMinSpeed = 15f;
-        [Tooltip("Açık hatası kazancı Kp (1/sn): kapanma hızı = Kp × (açık − τ*·v)")]
-        public float gapGain = 0.5f;
-        [Tooltip("Banda yumuşak oturma (m/sn²): kapanma hızı en fazla karekök(2 × bu × açık hatası). Kapanma bu yavaşlamayla sıfıra iner, salınım olmaz.")]
-        public float softLandingDecel = 4f;
-        [Tooltip("Çok yakınken en fazla geri çekilme (m/sn). Küçük: baskıda neredeyse hiç geri çekilmez, küçük hata açığı daraltır.")]
-        public float maxBackoff = 1.5f;
-        [Tooltip("Baskı sürünmesi (sn/sn): hedef bandın içinde kaldıkça hedeflenen zaman açığı her saniye bu kadar daralır. " +
-                 "Kaçamayan (yavaş) araba eninde sonunda biçilir; açığı τ* + creepResetMargin üstüne açan araba sürünmeyi sıfırlar.")]
-        public float pressureCreepRate = 0.012f;
-        [Tooltip("Zaman açığı τ* + bu değerin (sn) üstüne çıkınca baskı sürünmesi sıfırlanır")]
-        public float creepResetMargin = 0.3f;
-        [Tooltip("Hedef hızı referansının yükselme zaman sabiti (sn)")]
-        public float targetSpeedRiseTime = 0.25f;
-        [Tooltip("Hedef hızı referansının düşme zaman sabiti (sn): harvester hedefin yavaşlamasına geç inanır, hata yapanın üstüne gelir")]
-        public float targetSpeedFallTime = 1.2f;
+        [Header("Tasma")]
+        [Tooltip("En fazla açık (m, tablanın önünden arabanın arkasına, pist boyunca). Kalkış penceresi dışında harvester bundan uzağa düşmez: " +
+                 "düşecekse pist boyunca ileri itilir (virajda yavaşlama yok, hız sınırı yok).")]
+        public float leashMax = 30f;
+        [Tooltip("Yeniden yakalama (m/sn): hedef değişince ya da kalkışta tasma mevcut açıktan başlar ve en az bu bağıl hızla leashMax'a kısalır")]
+        public float leashReelInSpeed = 50f;
+        [Tooltip("Yeniden yakalamanın sonunda tasmanın yavaşlaması (m/sn²): kısalma hızı en fazla karekök(2 × bu × (tasma − leashMax)). " +
+                 "Harvester sürüye roket gibi gelip sonra sert fren yapmasın, banda yumuşak otursun.")]
+        public float leashLandingDecel = 20f;
+        [Tooltip("Araba merkezinden arka tampona uzaklık (m); açık arabanın arkasına ölçülsün")]
+        public float carRearOffset = 2.2f;
 
-        [Header("Kalkış atağı")]
-        [Tooltip("Çalışmaya başlayınca (SetRunning(true)) sürüye yetişene dek ivme (m/sn²). Araba 12 ile kalkıyor.")]
-        public float launchAcceleration = 28f;
-        [Tooltip("Kalkış atağında hız tavanı (m/sn)")]
-        public float launchMaxSpeed = 58f;
-        [Tooltip("Kalkış atağında banda oturma yavaşlaması (m/sn²): kapanma hızı = karekök(2 × bu × açık hatası); frenden küçük olmalı")]
-        public float launchLandingDecel = 10f;
-        [Tooltip("Kalkış atağı en fazla bu kadar sürer (sn). Hedef baskı mesafesine girince (hızı ne olursa olsun) hemen biter.")]
-        public float launchMaxDuration = 8f;
-        [Tooltip("Kalkış penceresi (sn, çalışmaya başladıktan itibaren): bu sürede harvester hedefin launchHoldGap gerisinde durur, " +
-                 "baskı payı ve av modu yok, ivme launchAcceleration. Kalkan araba ilk saniyelerde biçilmesin, ama sürü de kaçmasın.")]
+        [Header("Baskı")]
+        [Tooltip("Hedeflenen açık (m). Harvester buraya yumuşak sönümle oturur (15–25 m bandının ortası).")]
+        public float pressureGap = 20f;
+        [Tooltip("Bandın alt ve üst ucu (m; sadece etiket ve test)")]
+        public Vector2 pressureBand = new Vector2(15f, 25f);
+        [Tooltip("Saldırı yokken en küçük açık (m). Kaza yapmayan araba bundan yakına gelinmez, yani biçilmez.")]
+        public float pressureMinGap = 8f;
+        [Tooltip("Açık hatası kazancı Kp (1/sn): kapanma hızı = Kp × (açık − pressureGap). Küçük: daha yumuşak.")]
+        public float gapGain = 0.8f;
+        [Tooltip("Banda yumuşak oturma (m/sn²): kapanma hızı en fazla karekök(2 × bu × açık hatası), salınım olmaz")]
+        public float softLandingDecel = 6f;
+        [Tooltip("Çok yakınken en fazla geri çekilme (m/sn, arabanın hızının altına)")]
+        public float maxBackoff = 6f;
+
+        [Header("Kaza tespiti (hata affı yok)")]
+        [Tooltip("Araba hızının süzgeç zaman sabiti (sn): anlık hız gürültüsü kaza sayılmasın")]
+        public float speedSmoothing = 0.15f;
+        [Tooltip("Ortalama hız penceresi (sn): 'son birkaç saniyenin ortalaması' (üstel ortalama zaman sabiti)")]
+        public float crashAverageTime = 3f;
+        [Tooltip("Kaza eşiği: süzülmüş hız / beklenen hız bunun altına düşerse kaza. Beklenen = min(ortalama hız, o yerdeki temiz tempo).")]
+        [Range(0.2f, 0.95f)] public float crashSpeedRatio = 0.65f;
+        [Tooltip("Kaza sayılması için beklenenden en az bu kadar (m/sn) hız kaybı da gerekir (yavaş yerde gürültü kaza olmasın)")]
+        public float crashMinSpeedLoss = 6f;
+        [Tooltip("Bu hızın (m/sn) altına düşen araba durmuş sayılır: kaza")]
+        public float crashStopSpeed = 5f;
+        [Tooltip("Çarpma: süzülmüş hız bundan hızlı düşüyorsa (m/sn²) frenle değil çarparak yavaşlıyordur. Arabaların freni ~22 m/sn².")]
+        public float crashImpactDecel = 30f;
+        [Tooltip("Çarpma kaza sayılması için hız ayrıca ortalamanın bu katının altına inmeli (duvara sıyırıp hız kaybetmeyen kaza değil)")]
+        [Range(0.3f, 0.95f)] public float crashImpactRatio = 0.8f;
+        [Tooltip("Arabanın yukarı ekseni dünya yukarısıyla bu değerden (kosinüs) az örtüşüyorsa devrik: kaza")]
+        public float crashFlipUp = 0.35f;
+        [Tooltip("Temiz tempo: virajda temiz süren arabanın yanal ivmesi (m/sn²). Düşük = fren yapan iyi sürücüye daha hoşgörülü.")]
+        public float paceLateralAcceleration = 13f;
+        [Tooltip("Temiz tempo: viraj öncesi fren planı (m/sn²). Düşük = erken fren yapana daha hoşgörülü.")]
+        public float paceBraking = 12f;
+        [Tooltip("Temiz tempo: düzlükte üst hız (m/sn)")]
+        public float paceTopSpeed = 45f;
+
+        [Header("Saldırı")]
+        [Tooltip("Kaza yapan hedefe arabanın hızının bu kadar (m/sn) üstünde gelir")]
+        public float attackClosingSpeed = 25f;
+        [Tooltip("Saldırı en fazla bu kadar sürer (sn); biçemezse (araba toparlanıp kaçtıysa) baskıya döner")]
+        public float attackMaxDuration = 8f;
+        [Tooltip("Saldırıda hedefin yanal konumuna kayma hızı (m/sn)")]
+        public float attackLateralSpeed = 12f;
+
+        [Header("Kalkış")]
+        [Tooltip("Kalkış penceresi (sn, harvester salındıktan sonra): kaza tespiti yok, makara biçmez, açık en az launchMinGap. " +
+                 "Tasma yine de geçerli: harvester sürünün hemen arkasına gelir.")]
         public float launchWindow = 10f;
-        [Tooltip("Kalkış penceresinde en küçük takip açığı (m, tablanın önünden); pencerede geri çekilme sınırı da yok")]
-        public float launchHoldGap = 12f;
+        [Tooltip("Kalkış penceresinde en küçük açık (m)")]
+        public float launchMinGap = 12f;
 
-        [Header("Lastik bant (insafsızlık)")]
-        [Tooltip("Bu mesafenin içinde (tablanın önünden) baskı modundadır: hız tavanı pressureSpeedCap")]
-        public float pressureDistance = 25f;
-        [Tooltip("Baskı mesafesinin dışında hız tavanı (m/sn), açığa (tablanın önünden, m) göre. Gerçekçilik dışı: uzaktaki harvester'ı oyuncu görmüyor. " +
-                 "Varsayılan: 25 m → 39.5, 65 m (kökten ~75 m) → 50, 140 m (kökten ~150 m) → 70.")]
-        public AnimationCurve catchupSpeedCurve = Linear(new Vector2(25f, 39.5f), new Vector2(65f, 50f), new Vector2(140f, 70f));
-        [Tooltip("Viraj yanal ivmesinin çarpanı, açığa göre (uzaktayken virajı daha hızlı alır)")]
-        public AnimationCurve catchupCornerCurve = Linear(new Vector2(40f, 1f), new Vector2(90f, 1.6f), new Vector2(150f, 2.2f));
-        [Tooltip("Baskı modunda hız tavanı (m/sn). Arabanın son hızının biraz altında olmalı ki iyi sürücü düzlükte açabilsin.")]
-        public float pressureSpeedCap = 39.5f;
-
-        [Header("Hataya ceza")]
-        [Tooltip("Hedef bu mesafeden (m) yakınken yarış temposunun punishSpeedRatio katının altına düşerse (döndü, bariyere çarptı) av modu açılır")]
-        public float punishRange = 50f;
-        [Tooltip("Av modu eşiği: hedef hızı / yarış temposu (o noktada temiz sürüşün hızı)")]
-        [Range(0f, 1f)] public float punishSpeedRatio = 0.6f;
-        [Tooltip("Yarış temposu: temiz süren arabanın son hızı (m/sn)")]
-        public float paceTopSpeed = 40f;
-        [Tooltip("Yarış temposu: temiz süren arabanın viraj yanal ivmesi (m/sn²). Araba ~15'e kadar çıkabiliyor.")]
-        public float paceLateralAcceleration = 15f;
-        [Tooltip("Yarış temposu: temiz süren arabanın fren planı (m/sn²)")]
-        public float paceBraking = 18f;
-        [Tooltip("Av modunda viraj yanal ivmesinin çarpanı")]
-        public float punishCornerBoost = 2f;
-        [Tooltip("Av modunda yakındayken hız tavanı (m/sn); baskı tavanının yerine geçer")]
-        public float punishSpeedCap = 46f;
-        [Tooltip("Av modunda en az kapanma hızı (m/sn). 0: av modunda geri çekilmez ve hedef hızı referansı yarış temposuna çekilir, " +
-                 "yani harvester tempoyu korur ve arabanın kaybettiği zaman kadar açık kapanır (hata payı = zaman açığı).")]
-        public float punishClosingSpeed = 0f;
-        [Tooltip("Av modu tetiklendikten sonra en az bu kadar sürer (sn)")]
-        public float punishHold = 2f;
-
-        [Header("Görünmezken yetişme")]
-        [Tooltip("Görünmezken yetişme açık mı: harvester önündeki en yakın arabanın maxGap'ten fazla gerisindeyse ve hiçbir araba onu göremiyorsa pist boyunca ileri ışınlanır")]
+        [Header("Görünmezken ışınlanma (son çare)")]
+        [Tooltip("Açık bu değeri (m) aşar ve hiçbir araba harvester'ı göremezse pist boyunca ileri ışınlanır (yeniden yakalamayı kısaltır)")]
         public bool catchupTeleport = true;
-        [Tooltip("En fazla açık (m, kökten pist boyunca)")]
-        public float maxGap = 120f;
+        [Tooltip("Işınlanma için en az açık (m)")]
+        public float teleportGap = 120f;
         [Tooltip("Görüş mesafesi (m). 0 = sisten hesapla (RenderSettings), sis yoksa 150.")]
         public float visibleDistanceOverride = 0f;
         [Tooltip("Sisten hesapta: görünürlük bu oranın altına düşünce (sis faktörü) görünmez say. 0.15 = %85 sis.")]
@@ -113,17 +119,13 @@ namespace Harvester.Race
         [Tooltip("İki ışınlanma arasında en az süre (sn)")]
         public float teleportCooldown = 3f;
 
-        [Header("Direksiyon")]
-        [Tooltip("En büyük dönüş hızı (derece/sn)")]
-        public float turnRate = 50f;
-        [Tooltip("Dönüş hızının değişim hızı (derece/sn²); büyük = daha çevik")]
-        public float yawAcceleration = 160f;
-        [Tooltip("Hedefin yanal konumuna doğru kayma hızı (m/sn); yana kaçan arabayı ne çabuk izler")]
+        [Header("Yanal takip")]
+        [Tooltip("Hedefin yanal konumuna doğru kayma hızı (m/sn)")]
         public float lateralAimSpeed = 6.5f;
-
-        [Header("Tepki")]
-        [Tooltip("Gecikme payı (sn): harvester hedefin yanal konumunu bu kadar eskiden görür. Yana kaçmayı mümkün kılar.")]
+        [Tooltip("Gecikme payı (sn): harvester baskıda hedefin yanal konumunu bu kadar eskiden görür")]
         public float reactionDelay = 0.2f;
+        [Tooltip("Gövde yönünün pist yönüne oturma zaman sabiti (sn)")]
+        public float headingSmoothing = 0.08f;
 
         [Header("Tabla (biçme)")]
         [Tooltip("Tabla genişliği (m). Yol 14 m; genişledikçe yana kaçmak zorlaşır. Görsel de buna göre ölçeklenir.")]
@@ -132,7 +134,7 @@ namespace Harvester.Race
         public float headerDepth = 3.5f;
         [Tooltip("Biçme kutusunun tablanın önünden ne kadar ileri taştığı (m). Araba fiziksel temastan hemen önce biçilir.")]
         public float headerLead = 1.2f;
-        [Tooltip("Hedef bu mesafeden yakınsa makara biçme hızına çıkar (m)")]
+        [Tooltip("Açık bu değerden (m) küçükse makara biçme hızına çıkar (kalkış penceresi hariç)")]
         public float mowingRange = 45f;
 
         [Header("Çarpma")]
@@ -146,28 +148,10 @@ namespace Harvester.Race
         public float hitCooldown = 0.7f;
 
         [Header("Hedef seçimi")]
-        [Tooltip("Yeni aday mevcut hedeften en az bu kadar (m) yakınsa hedef değişir")]
-        public float targetSwitchMargin = 15f;
-        [Tooltip("Hedef en az bu kadar süre (sn) tutulur")]
-        public float minTargetHold = 1.5f;
-        [Tooltip("Bu kadar gerideki (m) araba hâlâ 'önde' sayılır (yanındaki araba)")]
+        [Tooltip("Bu kadar gerideki (m, kökten) araba hâlâ 'önde' sayılır (yanındaki araba)")]
         public float behindTolerance = 6f;
 
         // İleride: [Header("Silahlar")] roket, yağ, makineli ayarları buraya.
-
-        /// <summary>Uzaklık tabanlı tavan: baskı mesafesinin dışında catchupSpeedCurve, içinde pressureSpeedCap.</summary>
-        public float SpeedCapForGap(float effectiveGap)
-        {
-            if (effectiveGap <= pressureDistance || catchupSpeedCurve == null || catchupSpeedCurve.length == 0) return pressureSpeedCap;
-            return Mathf.Max(pressureSpeedCap, catchupSpeedCurve.Evaluate(effectiveGap));
-        }
-
-        /// <summary>Viraj yanal ivmesi çarpanı, açığa göre.</summary>
-        public float CornerBoostForGap(float effectiveGap)
-        {
-            if (catchupCornerCurve == null || catchupCornerCurve.length == 0) return 1f;
-            return Mathf.Max(1f, catchupCornerCurve.Evaluate(effectiveGap));
-        }
 
         /// <summary>Doğrusal (köşeli) eğri; uçlardan sonra sabit.</summary>
         public static AnimationCurve Linear(params Vector2[] points)
