@@ -60,7 +60,11 @@ public class lobby : NetworkBehaviour
     [SerializeField] private Button copyCodeButton;
 
     // Herkes yarışçı, harvester'ı sunucudaki yapay zekâ sürer
-    const string RaceSceneName = "race";
+    /// <summary>Yarışın oynanacağı sahne (Build Settings'te olmalı): "race" turlu pist, "dag" Dağ Tırmanışı.
+    /// Kurucu seçer; komut satırından -track dag. Harita seçimi arayüzü gelince oradan değişir.</summary>
+    public static string TrackScene = "race";
+    public static readonly string[] TrackScenes = { "race", "dag" };
+    static string RaceSceneName => TrackScene;
 
     // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
     public static string PendingStatus;
@@ -130,6 +134,8 @@ public class lobby : NetworkBehaviour
         }
 
         var args = Environment.GetCommandLineArgs();
+        int track = Array.IndexOf(args, "-track");
+        if (track >= 0 && track + 1 < args.Length) TrackScene = args[track + 1];
         bool host = Array.IndexOf(args, "-autoHost") >= 0;
         int join = Array.IndexOf(args, "-autoJoin");
         if (!host && join < 0) return;

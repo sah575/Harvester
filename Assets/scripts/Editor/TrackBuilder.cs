@@ -1040,4 +1040,107 @@ public static class TrackBuilder
         c = Color.Lerp(c, straw, rows * fine * 0.6f);
         return c * (0.85f + grain * 0.3f);
     }
+
+    // ---------------------------------------------------------------- dış haritalar (Antigravity)
+
+    const string DagFolder = "Assets/Maps/DagTirmanisi";
+    const string DagScenePath = "Assets/Scenes/dag.unity";
+
+    [System.Serializable]
+    class MapCenterline
+    {
+        public float genislik = 14f;
+        public float baslangic_m = 75f;
+        public float bitis_m = -1f;
+    }
+
+    /// <summary>
+    /// Dağ Tırmanışı: race sahnesinin kopyası (ışık, sis, LethalLook, ağ objeleri aynen), pist geometrisi yerine
+    /// Antigravity'nin Dag_Yol.fbx'i, orta çizgi Dag_Merkez.json'dan. Yeniden çalıştırılabilir.
+    /// </summary>
+    [MenuItem("Harvester/Harita/Dağ Tırmanışı Sahnesini Kur")]
+    public static void BuildMountain()
+    {
+        var active = EditorSceneManager.GetActiveScene();
+        if (active.isDirty && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+        string jsonPath = DagFolder + "/Dag_Merkez.json";
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(DagFolder + "/Dag_Yol.fbx");
+        if (!File.Exists(jsonPath) || model == null) { Debug.LogError("[Harita] Dag_Merkez.json ya da Dag_Yol.fbx yok"); return; }
+
+        // JSON: {"genislik":14,"noktalar":[[x,y,z],...],"baslangic_m":75,"bitis_m":2453}. JsonUtility iç içe dizi
+        // okuyamadığı için noktalar düz sayı listesine çevrilir.
+        string text = File.ReadAllText(jsonPath);
+        int open = text.IndexOf('[', text.IndexOf("\"noktalar\""));
+        int depth = 0, close = open;
+        for (int i = open; i < text.Length; i++)
+        {
+            if (text[i] == '[') depth++;
+            else if (text[i] == ']' && --depth == 0) { close = i; break; }
+        }
+        string flat = text.Substring(open, close - open + 1).Replace("[", "").Replace("]", "");
+        string meta = text.Remove(open, close - open + 1).Replace("\"noktalar\":,", "").Replace(",\"noktalar\":", "").Replace("\"noktalar\":", "");
+        var info = JsonUtility.FromJson<MapCenterline>(meta) ?? new MapCenterline();
+        var points = new List<Vector3>();
+        var parts = flat.Split(',');
+        for (int i = 0; i + 2 < parts.Length; i += 3)
+            points.Add(new Vector3(float.Parse(parts[i], System.Globalization.CultureInfo.InvariantCulture),
+                                   float.Parse(parts[i + 1], System.Globalization.CultureInfo.InvariantCulture),
+                                   float.Parse(parts[i + 2], System.Globalization.CultureInfo.InvariantCulture)));
+        if (points.Count < 10) { Debug.LogError("[Harita] Orta çizgide yeterli nokta yok: " + points.Count); return; }
+
+        if (!File.Exists(DagScenePath)) AssetDatabase.CopyAsset(ScenePath, DagScenePath);
+        var scene = EditorSceneManager.OpenScene(DagScenePath, OpenSceneMode.Single);
+
+        var track = Object.FindFirstObjectByType<RaceTrack>();
+        if (track == null) { Debug.LogError("[Harita] Sahnede RaceTrack yok"); return; }
+        var root = track.transform;
+        root.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        var source = track.GetComponent<RaceTrackSource>();
+        if (source != null) Object.DestroyImmediate(source); // "Rebuild Race Track" bu sahneyi düzenden yeniden kurmasın
+        foreach (var n in new[] { "Uretilen", "Harita" })
+        {
+            var old = root.Find(n);
+            if (old != null) Object.DestroyImmediate(old.gameObject);
+        }
+
+        track.SetCenterline(points, false, info.genislik > 1f ? info.genislik : 14f);
+        var so = new SerializedObject(track);
+        so.FindProperty("startDistance").floatValue = Mathf.Max(60f, info.baslangic_m);
+        if (info.bitis_m > 0f) so.FindProperty("finishMargin").floatValue = Mathf.Max(10f, track.Length - info.bitis_m);
+        so.ApplyModifiedPropertiesWithoutUndo();
+        EditorUtility.SetDirty(track);
+
+        // Görsel + çarpışma: yol, bariyer, duvar, tünel, kemer ve arazi çarpışır; yol çizgileri yalnız görsel.
+        var map = (GameObject)PrefabUtility.InstantiatePrefab(model);
+        map.name = "Harita";
+        map.transform.SetParent(root, false);
+        var materials = GetMaterials();
+        int colliders = 0;
+        foreach (var mf in map.GetComponentsInChildren<MeshFilter>(true))
+        {
+            string n = mf.gameObject.name;
+            if (n.StartsWith("Yol_Cizgi")) continue;
+            var mc = mf.gameObject.AddComponent<MeshCollider>();
+            mc.sharedMesh = mf.sharedMesh;
+            if (n.StartsWith("Bariyer") || n.Contains("Duvar") || n.StartsWith("Tunel")) mc.sharedMaterial = materials.barrierPhysics;
+            colliders++;
+            GameObjectUtility.SetStaticEditorFlags(mf.gameObject, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic);
+            var r = mf.GetComponent<MeshRenderer>();
+            if (r != null) r.shadowCastingMode = n.StartsWith("Arazi") ? ShadowCastingMode.Off : ShadowCastingMode.On;
+        }
+
+        // Diziliş ve çizgiler: turlu pistle aynı işaretler, orta çizgiye göre
+        var generated = new GameObject("Uretilen").transform;
+        generated.SetParent(root, false);
+        var frames = BuildFrames(points, false);
+        BuildMarkers(track, frames, false, track.Width, generated, materials);
+
+        var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+        if (!scenes.Exists(x => x.path == DagScenePath)) { scenes.Add(new EditorBuildSettingsScene(DagScenePath, true)); EditorBuildSettings.scenes = scenes.ToArray(); }
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log("[Harita] Dağ Tırmanışı kuruldu: " + points.Count + " nokta, " + track.Length.ToString("F0") + " m, başlangıç " +
+                  track.StartDistance.ToString("F0") + " m, bitiş " + track.FinishDistance.ToString("F0") + " m, çarpışan mesh " + colliders);
+    }
 }

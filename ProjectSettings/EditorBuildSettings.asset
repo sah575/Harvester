@@ -11,5 +11,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/race.unity
     guid: a7302544ecb147dd99c097139f76f74b
+  - enabled: 1
+    path: Assets/Scenes/dag.unity
+    guid: 6064c41bf1e4f9c1b8d5c74e2755755a
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

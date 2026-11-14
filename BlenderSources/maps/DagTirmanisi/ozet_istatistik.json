@@ -1,0 +1,75 @@
+{
+  "uzunluk_m": 2491.8,
+  "nokta_sayisi": 998,
+  "max_nokta_araligi_m": 2.499,
+  "yol_genisligi_m": 14.0,
+  "baslangic_m": 75.0,
+  "bitis_m": 2453.8,
+  "baslangic_duzlugu_m": 95.0,
+  "bitis_duzlugu_m": 165.0,
+  "en_dik_egim_yuzde": 10.6,
+  "en_dik_egim_konum_m": 1164.7,
+  "en_fazla_yanal_egim_derece": 3.5,
+  "en_dar_merkez_yaricap_m": 23.58,
+  "en_dar_ic_yaricap_m": 16.58,
+  "en_dar_yaricap_konum_m": 594.8,
+  "en_alcak_tavan_acikligi_m": 7.86,
+  "irtifa_baslangic_m": 0.0,
+  "irtifa_bitis_m": 195.19,
+  "firketeler": [
+    {
+      "ad": "Firkete_1_Sol",
+      "baslangic_m": 280.0,
+      "bitis_m": 370.0,
+      "aci_derece": -162.0
+    },
+    {
+      "ad": "Firkete_2_Sag",
+      "baslangic_m": 535.0,
+      "bitis_m": 625.0,
+      "aci_derece": 164.0
+    },
+    {
+      "ad": "Firkete_3_Sol",
+      "baslangic_m": 955.0,
+      "bitis_m": 1047.0,
+      "aci_derece": -160.0
+    },
+    {
+      "ad": "Firkete_4_Sag",
+      "baslangic_m": 1232.0,
+      "bitis_m": 1324.0,
+      "aci_derece": 160.0
+    },
+    {
+      "ad": "Firkete_5_Sol",
+      "baslangic_m": 1524.0,
+      "bitis_m": 1618.0,
+      "aci_derece": -158.0
+    }
+  ],
+  "tuneller": [
+    {
+      "name": "Tunel_01",
+      "start_m": 709.8,
+      "end_m": 822.3,
+      "length_m": 112.5,
+      "k0": 284,
+      "k1": 329,
+      "min_ceiling_m": 7.65,
+      "max_ceiling_m": 9.2
+    },
+    {
+      "name": "Tunel_02",
+      "start_m": 1709.5,
+      "end_m": 1899.5,
+      "length_m": 189.9,
+      "k0": 684,
+      "k1": 760,
+      "min_ceiling_m": 7.65,
+      "max_ceiling_m": 9.2
+    }
+  ],
+  "toplam_ucgen": 65190,
+  "mesh_sayisi": 26
+}
