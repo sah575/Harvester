@@ -540,6 +540,9 @@ namespace Harvester.Race
         /// </summary>
         public static float ViewDelay(ulong otherOwner)
         {
+            // Ölçülen gecikme varsa o (RemoteExtrapolator'ın kalibrasyonu; kullanıcı onayı 14 Kasım), yoksa eski formül
+            float measured;
+            if (RemoteExtrapolator.TryGetMeasuredDelay(otherOwner, out measured)) return measured;
             float delay = RawViewDelay(otherOwner);
             var nm = NetworkManager.Singleton;
             if (Instance != null && nm != null && nm.IsListening && nm.IsServer)
