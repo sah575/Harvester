@@ -74,6 +74,20 @@ Dağın eteğinden zirveye tek yönlü, **2–3 km** bir yol: keskin virajlar (e
 
 Önce **yalnız yol çizgisi ve kaba araziyi** (çevre detayı olmadan) teslim et: `Dag_Merkez.json` + kaba `Dag_Yol.fbx`. Ben sürüşü ve harvester'ı test ederim, onay verince çevre detayına geç. `Assets/`'e aktarırken kilit kuralı geçerli; `.meta` yazma.
 
+### A2. Dağ Tırmanışı: zirveye uzatma (kullanıcı kararı, 14 Kasım)
+Kullanıcı mevcut haritayı beğendi ("agy'nin eline sağlık"). Şimdi yol **toplam ~5 km** olacak ve **zirvede karlı bir bitişle** bitecek.
+
+**Kurallar:**
+- Mevcut yolun eski bitiş düzlüğüne kadar olan kısmı (yaklaşık ilk 2.340 m: yüzey, bariyer, tüneller, `Dag_Merkez.json` noktaları) **aynen kalır**; test edilmiş sürüş hattı bu. Eski bitiş düzlüğü ve kemeri kaldırılır, yol oradan devam eder.
+- Yeni bölüm (~2,5 km): ağırlık **saç tokası virajlarda**. Dağ yamacına üst üste dizilmiş en az 6 firkete (alttaki yol yukarıdan görünsün), aralarda kısa düzlükler. Ölçüler A1'deki gibi: genişlik 14 m, firkete iç yarıçapı ≥ 12 m, eğim ≤ %12, yanal eğim ≤ 6°, tünel varsa tavan ≥ 7 m.
+- Son ~1 km kar bölgesi: karlı arazi, karlı ağaçlar ve kayalar, yol kenarlarında kar birikintisi (yolun sürüş yüzeyi temiz kalabilir). Kar çizgisi şimdiki gibi yükseklikle başlar.
+- **Zirvede bitiş:** ~150 m düzlük + bitiş kemeri, karlı zirve düzlüğü.
+- **Manzara noktası (isteğe bağlı):** bitişten sonra küçük bir seyir terası (vadi ve alttaki firketeler görünsün). Performansı zorlarsa koyma. Ölçü: yeni bölüm sınırları içinde, ek model ≤ 3, üçgen bütçesine dahil.
+- Bütçe (bütün harita): arazi ≤ 350k üçgen, ağaç ≤ 6.000, çimen öbeği ≤ 8.000, malzeme ≤ 14. Mevcut modelleri tekrar kullan; yeni model gerekiyorsa (karlı kaya, kar yığını) A1 sınırları geçerli.
+- Dosya adları ve formatlar A1'deki gibi (`Dag_Yol.fbx`, `Dag_Arazi.fbx`, `Dag_Merkez.json`, `Dag_Yerlesim.json`); dosyalar güncellenir, yeni harita açılmaz.
+
+**Aşamalar (A1'deki gibi):** önce **yalnız yol + kaba arazi** (`Dag_Merkez.json` + `Dag_Yol.fbx` + kaba `Dag_Arazi.fbx`) teslim et ve dur; ben botlarla ve harvester'la test ederim. Onaydan sonra 2. aşama: yeni bölümün çevre detayı + kar + manzara.
+
 ---
 
 ## CLAUDE (yönetici)
