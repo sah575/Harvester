@@ -1,0 +1,17 @@
+{
+  "id": "RacerCoupe_01",
+  "gorunenAd": "Yarışçı Kupa",
+  "sinif": "coupe",
+  "cekis": "RWD",
+  "tahminiKutleKg": 1250,
+  "karakter": {
+    "sonHiz": 3,
+    "ivme": 3,
+    "yolTutus": 4,
+    "fren": 3,
+    "dayaniklilik": 2
+  },
+  "aciklama": "Başlangıç arabası, her işi yapan coupe: hafif ve dengeli, virajda güvenilir; hiçbir düzlükte en hızlı değil, gövdesi hafif olduğu için çarpışmada savrulur.",
+  "slotlar": {},
+  "jantlar": []
+}

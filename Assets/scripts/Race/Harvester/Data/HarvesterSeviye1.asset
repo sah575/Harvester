@@ -1,0 +1,65 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54b88c48eeb1c483b9f35628557e6c2c, type: 3}
+  m_Name: HarvesterSeviye1
+  m_EditorClassIdentifier: 
+  level: 1
+  displayName: Seviye 1
+  maxSpeed: 100
+  cruiseSpeed: 30
+  acceleration: 25
+  braking: 35
+  stopDeceleration: 8
+  leashMax: 30
+  leashReelInSpeed: 50
+  leashLandingDecel: 20
+  carRearOffset: 2.2
+  pressureGap: 20
+  pressureBand: {x: 15, y: 25}
+  pressureMinGap: 8
+  gapGain: 0.8
+  softLandingDecel: 6
+  maxBackoff: 6
+  speedSmoothing: 0.15
+  crashAverageTime: 3
+  crashSpeedRatio: 0.75
+  crashMinSpeedLoss: 6
+  crashStopSpeed: 5
+  crashImpactDecel: 30
+  crashImpactRatio: 0.8
+  crashFlipUp: 0.35
+  paceLateralAcceleration: 13
+  paceBraking: 12
+  paceTopSpeed: 45
+  attackClosingSpeed: 25
+  attackMaxDuration: 8
+  attackLateralSpeed: 12
+  launchWindow: 10
+  launchMinGap: 12
+  catchupTeleport: 1
+  teleportGap: 120
+  visibleDistanceOverride: 0
+  fogVisibilityThreshold: 0.15
+  minVisibleDistance: 80
+  teleportCooldown: 3
+  lateralAimSpeed: 6.5
+  reactionDelay: 0.2
+  headingSmoothing: 0.08
+  headerWidth: 9
+  headerDepth: 3.5
+  headerLead: 1.2
+  mowingRange: 45
+  hitSideSpeed: 9
+  hitForwardSpeed: 5
+  hitRearSpeed: 4
+  hitCooldown: 0.7
+  behindTolerance: 6

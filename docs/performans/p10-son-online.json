@@ -1,0 +1,14 @@
+{
+  "label": "p10-son-online",
+  "gpu_requested": "intel",
+  "api_requested": "auto",
+  "mode": "online",
+  "debris_collision_disabled_requested": false,
+  "host_race_started": true,
+  "host_finished": true,
+  "host_returned": true,
+  "client_returned": true,
+  "passed": true,
+  "network_mismatch": false,
+  "debris_collision_disabled_actual": false
+}

@@ -1,0 +1,107 @@
+{
+    "label": "p10-nvidia-glcore-final",
+    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU/PCIe/SSE2",
+    "api": "OpenGLCore",
+    "quality": "Yüksek",
+    "unity": "6000.0.85f1",
+    "csv": "/home/zoro/harvester/Harvester/Builds/reports/p10-nvidia-glcore-final/p10-nvidia-glcore-final.csv",
+    "persistentDataPath": "/home/zoro/harvester/Harvester/Builds/perf-prefs/p10-nvidia-glcore-final/unity3d/DefaultCompany/Harvester3D",
+    "width": 1920,
+    "height": 1080,
+    "frames": 40697,
+    "minAlive": 3,
+    "maxAlive": 4,
+    "fourAliveFrames": 38209,
+    "capturedSeconds": 60.00043554918375,
+    "wallSeconds": 125.86408037799998,
+    "renderScale": 0.5,
+    "mirrorRequested": true,
+    "frameTimingAvailable": true,
+    "debrisCollisionDisabled": false,
+    "metrics": [
+        {
+            "name": "wall_ms",
+            "validSamples": 40697,
+            "p50": 1.1369897983968259,
+            "p95": 3.199489787220955,
+            "p99": 7.264087442308664
+        },
+        {
+            "name": "cpu_ms",
+            "validSamples": 40697,
+            "p50": 1.136637,
+            "p95": 3.201292,
+            "p99": 7.268998
+        },
+        {
+            "name": "cpu_main_ms",
+            "validSamples": 40697,
+            "p50": 1.132304,
+            "p95": 3.185665,
+            "p99": 7.258096
+        },
+        {
+            "name": "cpu_render_ms",
+            "validSamples": 40697,
+            "p50": 0.456699,
+            "p95": 0.924475,
+            "p99": 1.219528
+        },
+        {
+            "name": "gpu_ms",
+            "validSamples": 0,
+            "p50": -1.0,
+            "p95": -1.0,
+            "p99": -1.0
+        },
+        {
+            "name": "present_wait_ms",
+            "validSamples": 40697,
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
+        },
+        {
+            "name": "draw_calls",
+            "validSamples": 40697,
+            "p50": 290.0,
+            "p95": 387.0,
+            "p99": 390.0
+        },
+        {
+            "name": "setpass",
+            "validSamples": 40697,
+            "p50": 36.0,
+            "p95": 42.0,
+            "p99": 42.0
+        },
+        {
+            "name": "batches",
+            "validSamples": 40697,
+            "p50": 270.0,
+            "p95": 352.0,
+            "p99": 359.0
+        },
+        {
+            "name": "triangles",
+            "validSamples": 40697,
+            "p50": 65151.0,
+            "p95": 80381.0,
+            "p99": 81475.0
+        },
+        {
+            "name": "shadow_casters",
+            "validSamples": 40697,
+            "p50": 153.0,
+            "p95": 160.0,
+            "p99": 204.0
+        },
+        {
+            "name": "gc_bytes",
+            "validSamples": 40697,
+            "p50": 2692.0,
+            "p95": 2700.0,
+            "p99": 10314.0
+        }
+    ]
+}

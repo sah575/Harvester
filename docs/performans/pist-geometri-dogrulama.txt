@@ -1,0 +1,10 @@
+P9 öncesi:
+Yol/bariyer SHA256=68-C4-96-46-01-FA-23-33-64-AA-08-68-38-75-94-BF-53-35-2C-AE-DE-E6-93-10-37-C7-9E-E9-F2-17-AD-C3; uzunluk=1396.73584; genişlik=14; zemin üçgen=73728; zemin parça=64; lamba renderer=30
+
+P9 sonrası:
+Yol/bariyer SHA256=68-C4-96-46-01-FA-23-33-64-AA-08-68-38-75-94-BF-53-35-2C-AE-DE-E6-93-10-37-C7-9E-E9-F2-17-AD-C3; uzunluk=1396.73584; genişlik=14; zemin üçgen=27264; zemin parça=42; lamba renderer=10
+
+Yol/bariyer geometri hash'i, pist uzunluğu ve genişliği birebir aynı.
+CarContactSolver sahne serileştirme bloğu özgün haliyle korundu.
+
+Ek denetim: P8 sahnesindeki 42 Yol_/Bariyer_/BariyerCarpisma_ mesh nesnesinin bütün serileştirilmiş verisi P9 ile eşit (vertex, index, normal, UV dahil).

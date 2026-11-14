@@ -1,0 +1,14 @@
+LOD öncesi / son sürüm sonrası: birebir aynı.
+2234473262
+GovdeCarpisma center=(0.05478, 4.60395, 1.05929) size=(8.64102, 8.40790, 12.22611)
+TablaCarpisma center=(0.00000, 1.85218, 8.53717) size=(9.00000, 2.51126, 2.72964)
+wheelRadii=1.62914419
+wheelRadii=1.62914419
+wheelRadii=1.303315
+wheelRadii=1.303315
+groundProbes=(-3.69948, 0.00000, 3.83007)
+groundProbes=(3.80904, 0.00000, 3.83007)
+groundProbes=(-2.92569, 0.00000, -3.55776)
+groundProbes=(2.94158, 0.00000, -3.55776)
+headerVisualWidth=14.8941536
+headerVisualBaseScale=(1.00000, 1.00000, 1.00000)

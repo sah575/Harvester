@@ -1,0 +1,117 @@
+{
+  "id": "HotHatch_01",
+  "gorunenAd": "Turbo Hatch",
+  "sinif": "hatchback",
+  "cekis": "AWD",
+  "tahminiKutleKg": 1380,
+  "karakter": {
+    "sonHiz": 2,
+    "ivme": 4,
+    "yolTutus": 5,
+    "fren": 4,
+    "dayaniklilik": 4
+  },
+  "aciklama": "Kısa aks mesafesi ve dört çeker tutuşuyla dar virajlarda çok çevik, kompakt 2-kutu turbo hot-hatch.",
+  "slotlar": {
+    "bumper_front": [
+      "stok",
+      "sokak",
+      "yarış",
+      "pist",
+      "time attack"
+    ],
+    "bumper_rear": [
+      "stok",
+      "sokak",
+      "pist",
+      "ekstrem"
+    ],
+    "skirts": [
+      "stok",
+      "sokak",
+      "aero",
+      "geniş"
+    ],
+    "fender": [
+      "stok",
+      "panjurlu",
+      "geniş kasa"
+    ],
+    "hood": [
+      "stok",
+      "sokak",
+      "havalandırmalı",
+      "pist",
+      "karbon"
+    ],
+    "spoiler": [
+      "stok",
+      "ördek kuyruğu",
+      "sokak kanadı",
+      "pist kanadı",
+      "kuğu boynu",
+      "time attack"
+    ],
+    "exhaust": [
+      "stok",
+      "çift titanyum",
+      "orta yarış",
+      "dörtlü ekstrem"
+    ],
+    "headlight": [
+      "stok",
+      "kehribar",
+      "halka",
+      "ralli"
+    ],
+    "taillight": [
+      "stok",
+      "led şerit",
+      "füme dörtlü"
+    ],
+    "mirror": [
+      "stok",
+      "aero",
+      "karbon yarış"
+    ],
+    "roof_scoop": [
+      "yok",
+      "tekli",
+      "çiftli",
+      "yarış"
+    ],
+    "rollcage": [
+      "yok",
+      "sokak yarım",
+      "tam güvenlik"
+    ],
+    "neon": [
+      "yok",
+      "yanlar",
+      "tam takım"
+    ],
+    "steering": [
+      "stok",
+      "derin göbek",
+      "pist boyunduruğu"
+    ],
+    "interior_passenger": [
+      "koltuk",
+      "çift nitro tüpü"
+    ],
+    "interior_pillar": [
+      "stok",
+      "üçlü gösterge"
+    ],
+    "frunk": [
+      "stok",
+      "özel ses sistemi"
+    ]
+  },
+  "jantlar": [
+    "spor",
+    "5 kol",
+    "türbin",
+    "file"
+  ]
+}

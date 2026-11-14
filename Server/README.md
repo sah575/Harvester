@@ -23,7 +23,7 @@ Oyun mantığı çalıştırmaz: odayı kuran oyuncu NGO host'udur, relay sadece
 
 - Ev → VDS ping: ~12 ms.
 - İstemci → relay → host → relay → istemci gidiş-dönüş: p50 ~27 ms. Oyunda tek yön ~15 ms.
-- 10 oda × 4 oyuncu, 30 Hz: tek çekirdeğin ~%17'si. Boşta ~%0, bellek ~13 MB.
+- 10 oda × 4 oyuncu, 30 Hz: tek çekirdeğin ~%17'si (o sırada makinede bir Bannerlord sunucusu da çalışıyordu). Boşta ~%0, bellek ~13 MB.
 
 Olay güdümlü mod (paketler LiteNetLib'in alma iş parçacığında, kilit altında) ve her taşımadan sonra `TriggerUpdate` en iyi sonucu verdi. Bekleme döngüsü boşta bile çekirdeğin %13'ünü yiyordu.
 
@@ -56,9 +56,7 @@ journalctl -u harvester-relay -f
   ```
   ufw allow 22/tcp
   ufw allow 7778/udp
-  ufw allow 4200
   ufw default deny incoming
   ufw enable
   ```
-  4200 aynı makinedeki Bannerlord coop sunucusu için açık.
 - Servis dosyası `deploy/harvester-relay.service`; `deploy.sh` onu kurar.

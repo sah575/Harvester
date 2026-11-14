@@ -15,18 +15,23 @@ public struct LobbyPlayer : INetworkSerializable, IEquatable<LobbyPlayer>
 {
     public ulong ClientId;
     public FixedString32Bytes Name;
-    public bool IsHarvester;
+    /// <summary>Oyuncu garajda aracını seçip "hazır" dedi. Herkes hazırsa yarış kendiliğinden başlar.</summary>
+    public bool Ready;
+    /// <summary>Pist oyu: 0 = oy vermedi, n = TrackScenes[n-1]. Okumak için VotedTrack.</summary>
+    public byte Vote;
+    public int VotedTrack => Vote - 1;
 
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
     {
         serializer.SerializeValue(ref ClientId);
         serializer.SerializeValue(ref Name);
-        serializer.SerializeValue(ref IsHarvester);
+        serializer.SerializeValue(ref Ready);
+        serializer.SerializeValue(ref Vote);
     }
 
     public bool Equals(LobbyPlayer other)
     {
-        return ClientId == other.ClientId && Name.Equals(other.Name) && IsHarvester == other.IsHarvester;
+        return ClientId == other.ClientId && Name.Equals(other.Name) && Ready == other.Ready && Vote == other.Vote;
     }
 }
 
@@ -34,7 +39,7 @@ public class lobby : NetworkBehaviour
 {
     public const int MaxPlayers = 4;
     // Editörde ve development build'de tek başına girip test edilebilsin
-    public static int MinPlayers => Debug.isDebugBuild ? 1 : 2;
+    public static int MinPlayers => SinglePlayer || Debug.isDebugBuild ? 1 : 2;
     const int MaxNameLength = 16;
     const ushort Port = 7777;
 
@@ -52,13 +57,19 @@ public class lobby : NetworkBehaviour
     [Header("Oda")]
     [SerializeField] private GameObject roomPanel;
     [SerializeField] private TMP_Text[] slotTexts;
-    [SerializeField] private Button harvesterButton, robotButton, startButton, leaveButton;
+    [SerializeField] private Button startButton, leaveButton;
     [SerializeField] private TMP_Text roomStatusText;
     [SerializeField] private GameObject roomCodeRow;
     [SerializeField] private TMP_Text roomCodeText;
     [SerializeField] private Button copyCodeButton;
 
-    [SerializeField] private string gameSceneName = "world";
+    // Herkes yarışçı, harvester'ı sunucudaki yapay zekâ sürer
+    /// <summary>Yarışın oynanacağı sahne (Build Settings'te olmalı): "race" turlu pist, "dag" Dağ Tırmanışı.
+    /// Kurucu seçer; komut satırından -track dag. Harita seçimi arayüzü gelince oradan değişir.</summary>
+    public static string TrackScene = "race";
+    public static readonly string[] TrackScenes = { "race", "dag" };
+    public static readonly string[] TrackNames = { "Gece Pisti (turlu)", "Dağ Tırmanışı (sprint)" };
+    static string RaceSceneName => TrackScene;
 
     // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
     public static string PendingStatus;
@@ -73,16 +84,21 @@ public class lobby : NetworkBehaviour
     }
 
     private readonly NetworkList<LobbyPlayer> players = new NetworkList<LobbyPlayer>();
+    // Herkes hazır olunca yarışın başlayacağı sunucu zamanı; -1: geri sayım yok
+    private readonly NetworkVariable<double> autoStartAt = new NetworkVariable<double>(-1);
+    // Odada seçili pist (TrackScenes indeksi); kurucu seçer, herkes görür
+    private readonly NetworkVariable<byte> trackIndex = new NetworkVariable<byte>(0);
+    [Tooltip("Herkes hazır olduktan sonra yarışın başlamasına kalan süre (sn). Tek oyunculuda beklenmez.")]
+    [SerializeField] private float allReadyDelay = 3f;
     private readonly Dictionary<ulong, string> pendingNames = new Dictionary<ulong, string>();
     private string hostPassword;
     private bool gameStarted;
 
     private void Awake()
     {
+        Instance = this;
         hostButton.onClick.AddListener(OnHostClicked);
         joinButton.onClick.AddListener(OnJoinClicked);
-        harvesterButton.onClick.AddListener(() => RequestRoleRpc(true));
-        robotButton.onClick.AddListener(() => RequestRoleRpc(false));
         startButton.onClick.AddListener(StartGame);
         leaveButton.onClick.AddListener(Leave);
         onlineTabButton.onClick.AddListener(() => SetMode(true));
@@ -103,9 +119,8 @@ public class lobby : NetworkBehaviour
     }
 
     // Development build'de komut satırından otomatik test (editörde çalışmaz):
-    //   -autoHost [-autoHarvester] [-autoStart N] [-autoRounds R]   oda kur, istenirse Harvester ol,
-    //                                                                N oyuncu olunca başlat, R tur oyna
-    //   -autoJoin <adres> [-autoHarvester]                           odaya bağlan, istenirse Harvester'ı seç
+    //   -autoHost [-autoStart N] [-autoRounds R]                     oda kur, N oyuncu olunca başlat, R tur oyna
+    //   -autoJoin <adres>                                            odaya bağlan
     //   -autoOnline                                                  LAN yerine relay kullan. Host davet kodunu
     //                                                                AutoTestCodePath dosyasına yazar; -autoJoin
     //                                                                adresi "kod" ise istemci kodu oradan okur,
@@ -126,12 +141,14 @@ public class lobby : NetworkBehaviour
         }
 
         var args = Environment.GetCommandLineArgs();
+        int track = Array.IndexOf(args, "-track");
+        if (track >= 0 && track + 1 < args.Length) TrackScene = args[track + 1];
         bool host = Array.IndexOf(args, "-autoHost") >= 0;
         int join = Array.IndexOf(args, "-autoJoin");
         if (!host && join < 0) return;
 
         autoTestStarted = true;
-        AutoTestReporter.Create();
+        // Yarıştaki test bayraklarını (-autoDrive, -autoTrace, -ntBuffer...) RaceAutoTest okur
         bool online = Array.IndexOf(args, "-autoOnline") >= 0;
         SetMode(online);
         int relayAddress = Array.IndexOf(args, "-relayAddress");
@@ -139,8 +156,7 @@ public class lobby : NetworkBehaviour
         Relay.Port = (ushort)IntArg(args, "-relayPort", Relay.Port);
         autoStartPlayers = host ? IntArg(args, "-autoStart", 0) : 0;
         autoRoundsLeft = autoStartPlayers > 0 ? IntArg(args, "-autoRounds", 1) : 0;
-        StartCoroutine(AutoTest(host, join >= 0 && join + 1 < args.Length ? args[join + 1] : "127.0.0.1",
-            Array.IndexOf(args, "-autoHarvester") >= 0));
+        StartCoroutine(AutoTest(host, join >= 0 && join + 1 < args.Length ? args[join + 1] : "127.0.0.1"));
     }
 
     private static int IntArg(string[] args, string name, int fallback)
@@ -151,7 +167,7 @@ public class lobby : NetworkBehaviour
 
     private static string AutoTestCodePath => System.IO.Path.Combine(Application.persistentDataPath, "autotest-code.txt");
 
-    private IEnumerator AutoTest(bool host, string address, bool harvester)
+    private IEnumerator AutoTest(bool host, string address)
     {
         nameInput.text = host ? "TestHost" : "TestClient";
         if (OnlineMode && host)
@@ -182,7 +198,6 @@ public class lobby : NetworkBehaviour
         }
 
         while (!IsSpawned) yield return null;
-        if (harvester) RequestRoleRpc(true);
         if (autoRoundsLeft > 0) yield return AutoStartWhenReady();
     }
 
@@ -197,9 +212,231 @@ public class lobby : NetworkBehaviour
 
     public override void OnDestroy()
     {
+        if (Instance == this) Instance = null;
         UnsubscribeCallbacks();
         base.OnDestroy();
     }
+
+
+    #region Arayüz API'si (Codex'in menüleri bunları çağırır)
+
+    public static lobby Instance { get; private set; }
+
+    /// <summary>Tek oyunculu oyun: yerel, dışarıya kapalı bir oda. Akış çok oyunculuyla aynı: oda → garaj → hazır → yarış.</summary>
+    public static bool SinglePlayer { get; private set; }
+
+    /// <summary>Oyuncu listesi, hazır durumları, geri sayım ya da davet kodu değişince.</summary>
+    public event Action RoomChanged;
+
+    public bool InRoom => IsSpawned;
+    public int PlayerCount => IsSpawned ? players.Count : 0;
+    public LobbyPlayer GetPlayer(int index) => players[index];
+    public bool IsLocal(LobbyPlayer p) => IsSpawned && p.ClientId == NetworkManager.LocalClientId;
+    public bool IsRoomOwner(LobbyPlayer p) => p.ClientId == NetworkManager.ServerClientId;
+
+    public bool LocalReady
+    {
+        get
+        {
+            if (!IsSpawned) return false;
+            int i = IndexOf(NetworkManager.LocalClientId);
+            return i >= 0 && players[i].Ready;
+        }
+    }
+
+    /// <summary>Herkes hazırsa yarışın başlamasına kalan saniye; geri sayım yoksa -1.</summary>
+    public float AutoStartRemaining =>
+        IsSpawned && autoStartAt.Value >= 0 ? Mathf.Max(0f, (float)(autoStartAt.Value - NetworkManager.ServerTime.Time)) : -1f;
+
+    /// <summary>Seçili pistin TrackScenes/TrackNames indeksi (odada herkes görür).</summary>
+    public int TrackIndex => IsSpawned ? Mathf.Clamp(trackIndex.Value, 0, TrackScenes.Length - 1) : Mathf.Max(0, Array.IndexOf(TrackScenes, TrackScene));
+
+    /// <summary>Sadece oda kurucusu (tek oyunculuda oyuncunun kendisi): pisti seçer. Hazır olanların hazırlığı bozulmaz.</summary>
+    public void SetTrack(int index)
+    {
+        if (index < 0 || index >= TrackScenes.Length) return;
+        TrackScene = TrackScenes[index];
+        if (IsSpawned && IsServer && !gameStarted) trackIndex.Value = (byte)index;
+    }
+
+    /// <summary>
+    /// Çok oyunculu pist oylaması: yerel oyuncu bir piste oy verir (aynı oyu tekrar vermek ya da -1 oyu geri alır).
+    /// Yarış başlarken sunucu en çok oyu alan pisti seçer; eşitlikte eşit olanlardan rastgele. Hiç oy yoksa
+    /// TrackIndex'teki pist kalır. Tek oyunculuda doğrudan SetTrack gibi davranır.
+    /// </summary>
+    public void VoteTrack(int index)
+    {
+        if (index >= TrackScenes.Length) return;
+        if (SinglePlayer) { if (index >= 0) SetTrack(index); return; }
+        if (!IsSpawned) return;
+        VoteTrackRpc(index < 0 ? -1 : index);
+    }
+
+    [Rpc(SendTo.Server)]
+    private void VoteTrackRpc(int index, RpcParams rpcParams = default)
+    {
+        if (gameStarted || index >= TrackScenes.Length) return;
+        int i = IndexOf(rpcParams.Receive.SenderClientId);
+        if (i < 0) return;
+        var p = players[i];
+        byte vote = (byte)(index < 0 ? 0 : index + 1);
+        if (p.Vote == vote) return;
+        p.Vote = vote;
+        players[i] = p;
+    }
+
+    /// <summary>Yerel oyuncunun oyu (TrackScenes indeksi); oy vermediyse -1.</summary>
+    public int LocalVote
+    {
+        get
+        {
+            if (!IsSpawned) return -1;
+            foreach (var p in players) if (p.ClientId == NetworkManager.LocalClientId) return p.VotedTrack;
+            return -1;
+        }
+    }
+
+    /// <summary>Bir pistin aldığı oy sayısı.</summary>
+    public int TrackVotes(int index)
+    {
+        if (!IsSpawned) return 0;
+        int n = 0;
+        foreach (var p in players) if (p.VotedTrack == index) n++;
+        return n;
+    }
+
+    /// <summary>Şu an önde olan pist; hiç oy yoksa ya da eşitlik varsa -1 (eşitlikte başlarken rastgele seçilir).</summary>
+    public int LeadingTrack
+    {
+        get
+        {
+            int best = -1, bestVotes = 0; bool tie = false;
+            for (int t = 0; t < TrackScenes.Length; t++)
+            {
+                int v = TrackVotes(t);
+                if (v > bestVotes) { best = t; bestVotes = v; tie = false; }
+                else if (v > 0 && v == bestVotes) tie = true;
+            }
+            return tie ? -1 : best;
+        }
+    }
+
+    // Sunucu: oylardan pisti seçer (çoğunluk, eşitlikte rastgele). Hiç oy yoksa mevcut pist kalır.
+    private void DecideTrackByVote()
+    {
+        if (SinglePlayer) return;
+        int bestVotes = 0;
+        var tied = new List<int>();
+        for (int t = 0; t < TrackScenes.Length; t++)
+        {
+            int v = TrackVotes(t);
+            if (v == 0 || v < bestVotes) continue;
+            if (v > bestVotes) { bestVotes = v; tied.Clear(); }
+            tied.Add(t);
+        }
+        if (tied.Count == 0) return;
+        int chosen = tied[UnityEngine.Random.Range(0, tied.Count)];
+        if (Debug.isDebugBuild) Debug.Log("[Lobby] Pist oylaması: " + TrackScenes[chosen] + " (" + bestVotes + " oy, eşit: " + tied.Count + ")");
+        TrackScene = TrackScenes[chosen];
+        trackIndex.Value = (byte)chosen;
+    }
+
+    /// <summary>Davet kodu (online oda); yoksa boş.</summary>
+    public string RoomCode
+    {
+        get
+        {
+            var nm = NetworkManager.Singleton;
+            var relay = nm != null ? nm.NetworkConfig.NetworkTransport as RelayTransport : null;
+            return relay != null ? relay.RoomCode ?? "" : "";
+        }
+    }
+
+    /// <summary>Oda kurulamadı / bağlanılamadı / bağlantı koptu gibi durumlarda menüye dönülünce çağrılır (mesajla).</summary>
+    public event Action<string> MenuReturned;
+
+    /// <summary>Tek oyunculu oyunu başlatır: yerel oda kurar. Oyuncu garajda "SÜR" deyince SetReady(true) çağrılır.</summary>
+    public void StartSinglePlayer()
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm == null || nm.IsListening) return;
+        SinglePlayer = true;
+        hostPassword = "";
+        gameStarted = false;
+        pendingNames.Clear();
+        MatchSettings.Players.Clear();
+        MatchSettings.RoomPassword = "";
+
+        var utp = nm.GetComponent<UnityTransport>();
+        // Yalnız bu bilgisayar: dışarıdan kimse bağlanamaz
+        utp.SetConnectionData("127.0.0.1", Port, "127.0.0.1");
+        nm.NetworkConfig.NetworkTransport = utp;
+        nm.NetworkConfig.ConnectionData = BuildPayload("");
+        SubscribeCallbacks();
+        nm.ConnectionApprovalCallback = ApprovalCheck;
+        if (!nm.StartHost())
+        {
+            SinglePlayer = false;
+            UnsubscribeCallbacks();
+            ShowMenu("Oyun başlatılamadı. Port " + Port + " kullanımda olabilir.");
+            return;
+        }
+        SavePlayerName();
+        SetMenuInteractable(false);
+    }
+
+    /// <summary>Çok oyunculu oda kurar (online: davet kodu, LAN: şifre). Mod SetOnlineMode ile seçilir.</summary>
+    public void HostRoom() { SinglePlayer = false; OnHostClicked(); }
+
+    /// <summary>Odaya katılır (online: kod, LAN: adres + şifre; alanlar lobinin kendi input'larından okunur).</summary>
+    public void JoinRoom() { SinglePlayer = false; OnJoinClicked(); }
+
+    public void SetOnlineMode(bool online) { SetMode(online); }
+    public bool IsOnlineMode => OnlineMode;
+
+    /// <summary>Odadan/tek oyunculudan çıkıp ana menüye döner.</summary>
+    public void LeaveRoom() { Leave(); }
+
+    /// <summary>Yerel oyuncunun hazır durumu. Tek oyunculuda hazır = yarışı hemen başlat.</summary>
+    public void SetReady(bool ready)
+    {
+        if (!IsSpawned) return;
+        SetReadyRpc(ready);
+    }
+
+    [Rpc(SendTo.Server)]
+    private void SetReadyRpc(bool ready, RpcParams rpcParams = default)
+    {
+        if (gameStarted) return;
+        int i = IndexOf(rpcParams.Receive.SenderClientId);
+        if (i < 0) return;
+        var p = players[i];
+        if (p.Ready == ready) return;
+        p.Ready = ready;
+        players[i] = p;
+    }
+
+    private bool AllReady()
+    {
+        if (players.Count < MinPlayers) return false;
+        foreach (var p in players) if (!p.Ready) return false;
+        return true;
+    }
+
+    // Sunucu: herkes hazırsa geri say, biri vazgeçerse ya da yeni biri girerse geri sayımı iptal et.
+    private void Update()
+    {
+        if (!IsSpawned || !IsServer || gameStarted) return;
+        double now = NetworkManager.ServerTime.Time;
+        if (AllReady())
+        {
+            if (autoStartAt.Value < 0) autoStartAt.Value = now + (SinglePlayer ? 0.2 : allReadyDelay);
+            else if (now >= autoStartAt.Value) StartGame();
+        }
+        else if (autoStartAt.Value >= 0) autoStartAt.Value = -1;
+    }
+
+    #endregion
 
     #region Menü
 
@@ -330,6 +567,7 @@ public class lobby : NetworkBehaviour
 
     private void Leave()
     {
+        SinglePlayer = false;
         NetworkManager.Singleton.Shutdown();
         UnsubscribeCallbacks();
         ShowMenu("");
@@ -341,6 +579,11 @@ public class lobby : NetworkBehaviour
         roomPanel.SetActive(false);
         SetMenuInteractable(true);
         menuStatusText.text = status;
+        // Bağlantı yoksa tek oyunculu oturum da bitmiştir (yarıştan dönüşte Awake'te bağlantı hâlâ açık, dokunma)
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) SinglePlayer = false;
+        MenuReturned?.Invoke(status);
+        var menus = GetComponent<Harvester.UI.LobbyMenus>();
+        if (menus != null) menus.ShowMain(status);
     }
 
     private void SetMenuInteractable(bool value)
@@ -405,19 +648,38 @@ public class lobby : NetworkBehaviour
 
             players.Clear();
             foreach (var id in NetworkManager.ConnectedClientsIds) AddPlayer(id);
+            autoStartAt.Value = -1;
+            trackIndex.Value = (byte)Mathf.Max(0, Array.IndexOf(TrackScenes, TrackScene));
         }
+        autoStartAt.OnValueChanged += OnAutoStartChanged;
+        trackIndex.OnValueChanged += OnTrackChanged;
 
         menuPanel.SetActive(false);
         roomPanel.SetActive(true);
+        var menus = GetComponent<Harvester.UI.LobbyMenus>();
+        if (menus != null) menus.ShowRoom();
         RefreshRoom();
+        if (Debug.isDebugBuild) Debug.Log("[Lobby] Oda açıldı: kurucu=" + IsServer + " bağlı=" + NetworkManager.ConnectedClientsIds.Count);
     }
 
     public override void OnNetworkDespawn()
     {
         players.OnListChanged -= OnPlayersChanged;
+        autoStartAt.OnValueChanged -= OnAutoStartChanged;
+        trackIndex.OnValueChanged -= OnTrackChanged;
     }
 
     private void OnPlayersChanged(NetworkListEvent<LobbyPlayer> change)
+    {
+        RefreshRoom();
+    }
+
+    private void OnAutoStartChanged(double previous, double current)
+    {
+        RefreshRoom();
+    }
+
+    private void OnTrackChanged(byte previous, byte current)
     {
         RefreshRoom();
     }
@@ -452,9 +714,14 @@ public class lobby : NetworkBehaviour
         string playerName = split >= 0 ? payload.Substring(split + 1) : "Oyuncu";
         if (playerName.Length > MaxNameLength) playerName = playerName.Substring(0, MaxNameLength);
 
-        response.CreatePlayerObject = false; // Karakterleri world sahnesinde SpamChars oluşturuyor
+        response.CreatePlayerObject = false; // Arabaları race sahnesinde RaceSpawner oluşturuyor
 
-        if (gameStarted)
+        if (SinglePlayer && request.ClientNetworkId != NetworkManager.ServerClientId)
+        {
+            response.Approved = false;
+            response.Reason = "Tek oyunculu oyun.";
+        }
+        else if (gameStarted)
         {
             response.Approved = false;
             response.Reason = "Oyun zaten başladı.";
@@ -480,7 +747,7 @@ public class lobby : NetworkBehaviour
     {
         if (IndexOf(clientId) >= 0) return;
 
-        // Önceki turdan dönen oyuncu ismini ve rolünü korur
+        // Önceki turdan dönen oyuncunun ismi korunur
         MatchSettings.Players.TryGetValue(clientId, out var previous);
         if (!pendingNames.TryGetValue(clientId, out string playerName)) playerName = previous.Name;
 
@@ -488,29 +755,12 @@ public class lobby : NetworkBehaviour
         {
             ClientId = clientId,
             Name = new FixedString32Bytes(string.IsNullOrEmpty(playerName) ? "Oyuncu" : playerName),
-            IsHarvester = previous.IsHarvester && HarvesterIndex() < 0,
         });
     }
 
     #endregion
 
-    #region Roller ve başlatma
-
-    [Rpc(SendTo.Server)]
-    private void RequestRoleRpc(bool harvester, RpcParams rpcParams = default)
-    {
-        ulong sender = rpcParams.Receive.SenderClientId;
-        int index = IndexOf(sender);
-        if (index < 0) return;
-
-        // Harvester'ı sadece 1 kişi seçebilir
-        if (harvester && HarvesterIndex() >= 0 && HarvesterIndex() != index) return;
-
-        var player = players[index];
-        if (player.IsHarvester == harvester) return;
-        player.IsHarvester = harvester;
-        players[index] = player;
-    }
+    #region Başlatma
 
     private void StartGame()
     {
@@ -519,11 +769,12 @@ public class lobby : NetworkBehaviour
         MatchSettings.Players.Clear();
         foreach (var p in players)
         {
-            MatchSettings.Players[p.ClientId] = new MatchSettings.PlayerInfo { Name = p.Name.ToString(), IsHarvester = p.IsHarvester };
+            MatchSettings.Players[p.ClientId] = new MatchSettings.PlayerInfo { Name = p.Name.ToString() };
         }
 
+        DecideTrackByVote();
         gameStarted = true;
-        NetworkManager.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
+        NetworkManager.SceneManager.LoadScene(RaceSceneName, LoadSceneMode.Single);
     }
 
     private bool CanStart(out string reason)
@@ -531,12 +782,6 @@ public class lobby : NetworkBehaviour
         if (players.Count < MinPlayers)
         {
             reason = "Başlamak için en az " + MinPlayers + " oyuncu gerekli.";
-            return false;
-        }
-        // Tek kişilik debug turunda rol serbest: robot seçen Harvester'sız dolaşır
-        if (HarvesterIndex() < 0 && players.Count > 1)
-        {
-            reason = "Bir oyuncu Harvester'ı seçmeli.";
             return false;
         }
         reason = "";
@@ -552,15 +797,6 @@ public class lobby : NetworkBehaviour
         return -1;
     }
 
-    private int HarvesterIndex()
-    {
-        for (int i = 0; i < players.Count; i++)
-        {
-            if (players[i].IsHarvester) return i;
-        }
-        return -1;
-    }
-
     #endregion
 
     private void RefreshRoom()
@@ -568,8 +804,6 @@ public class lobby : NetworkBehaviour
         if (!IsSpawned) return;
 
         ulong localId = NetworkManager.LocalClientId;
-        int harvesterIndex = HarvesterIndex();
-        bool localIsHarvester = false;
 
         for (int i = 0; i < slotTexts.Length; i++)
         {
@@ -581,16 +815,11 @@ public class lobby : NetworkBehaviour
 
             var p = players[i];
             bool isLocal = p.ClientId == localId;
-            if (isLocal) localIsHarvester = p.IsHarvester;
-
-            string role = p.IsHarvester ? "<color=#E03A2F>HARVESTER</color>" : "<color=#8FB3D9>Robot</color>";
-            string tags = (p.ClientId == NetworkManager.ServerClientId ? "  <color=#C9A227>[host]</color>" : "")
+            const string role = "<color=#8FB3D9>Yarışçı</color>";
+            string tags = (p.ClientId == NetworkManager.ServerClientId ? "  <color=#C9A227>[kurucu]</color>" : "")
                         + (isLocal ? "  <color=#AAA>(sen)</color>" : "");
             slotTexts[i].text = p.Name + tags + "<pos=70%>" + role;
         }
-
-        harvesterButton.interactable = !localIsHarvester && harvesterIndex < 0;
-        robotButton.interactable = localIsHarvester;
 
         var relay = NetworkManager.NetworkConfig.NetworkTransport as RelayTransport;
         roomCodeRow.SetActive(relay != null);
@@ -605,7 +834,10 @@ public class lobby : NetworkBehaviour
         bool canStart = CanStart(out string reason);
         startButton.interactable = canStart;
 
+        float remaining = AutoStartRemaining;
         if (!canStart) roomStatusText.text = reason;
-        else roomStatusText.text = IsServer ? "Hazır! Oyunu başlatabilirsin." : "Host'un oyunu başlatması bekleniyor...";
+        else if (remaining >= 0f) roomStatusText.text = "Herkes hazır! Yarış başlıyor...";
+        else roomStatusText.text = "Herkes hazır olunca yarış başlar.";
+        RoomChanged?.Invoke();
     }
 }
