@@ -63,8 +63,14 @@ namespace Harvester.Race
         [SerializeField] private float cockpitBumpLimit = 0.03f;
         [Tooltip("Hızlanırken/frenlerken kafanın en fazla ileri-geri eğilmesi (derece)")]
         [SerializeField] private float cockpitPitchKick = 2f;
-        [SerializeField] private float cockpitFov = 70f;
+        [SerializeField] private float cockpitFov = 72f;
         [SerializeField] private float cockpitNearClip = 0.03f;
+        [Tooltip("Kameranın camera_cockpit noktasından yukarı kayması (m). Torpido yolu daha az kapatsın.")]
+        [SerializeField] private float cockpitRaise = 0.06f;
+        [Tooltip("Kameranın camera_cockpit noktasından öne kayması (m)")]
+        [SerializeField] private float cockpitForward = 0.03f;
+        [Tooltip("Kokpit kamerasının sabit aşağı bakışı (derece). Ufuk ekranın ortasının biraz üstüne gelir, yol görünür.")]
+        [SerializeField] private float cockpitLookDown = 7f;
 
         public Mode CurrentMode { get; private set; }
 
@@ -75,6 +81,8 @@ namespace Harvester.Race
         private Quaternion hoodRotation;
         private float cockpitPitch, cockpitRoll, cockpitHeadOffset, cockpitPrevY, cockpitPrevSpeed, cockpitAccelPitch;
         private GUIStyle messageStyle;
+        private RaceCar cockpitViewCar;
+        private CarVisual cockpitViewVisual;
         private float heading;
         private float smoothedHeight;
         private float heightVelocity;
@@ -118,9 +126,34 @@ namespace Harvester.Race
             CurrentMode = (Mode)Mathf.Clamp(PlayerPrefs.GetInt(ModePrefKey, 0), 0, ModeNames.Length - 1);
         }
 
+        private void OnDisable()
+        {
+            SetCockpitViewCar(null);
+        }
+
         private void OnDestroy()
         {
+            SetCockpitViewCar(null);
             if (Current == this) Current = null;
+        }
+
+        /// <summary>
+        /// Kokpit görünümü (camlar gizli) yalnız kokpit modunda ve yalnız yerel oyuncunun kendi arabasında açık olur.
+        /// Mod, hedef ya da yerel araba değişince önceki arabanınki geri alınır.
+        /// </summary>
+        private void UpdateCockpitView()
+        {
+            RaceCar want = target != null && CurrentMode == Mode.Kokpit && target == RaceCar.Local
+                && !target.IsEliminated && target.CockpitAnchor != null ? target : null;
+            if (want != cockpitViewCar) SetCockpitViewCar(want);
+        }
+
+        private void SetCockpitViewCar(RaceCar car)
+        {
+            if (cockpitViewVisual != null) cockpitViewVisual.SetCockpitView(false);
+            cockpitViewCar = car;
+            cockpitViewVisual = car != null ? car.GetComponent<CarVisual>() : null;
+            if (cockpitViewVisual != null) cockpitViewVisual.SetCockpitView(true);
         }
 
         private void Update()
@@ -134,6 +167,7 @@ namespace Harvester.Race
 
         private void LateUpdate()
         {
+            UpdateCockpitView();
             if (target == null) return;
             float dt = Time.deltaTime;
             Transform t = target.transform;
@@ -271,8 +305,8 @@ namespace Harvester.Race
             float kickTarget = Mathf.Clamp(-accel * 0.12f, -cockpitPitchKick, cockpitPitchKick);
             cockpitAccelPitch = Mathf.Lerp(cockpitAccelPitch, kickTarget, dt > 0f ? 1f - Mathf.Exp(-dt / 0.25f) : 0f);
 
-            transform.position = anchor.position + t.up * cockpitHeadOffset;
-            transform.rotation = yaw * Quaternion.Euler(cockpitPitch * cockpitTiltFollow + cockpitAccelPitch, 0f, cockpitRoll * cockpitTiltFollow);
+            transform.position = anchor.position + t.up * (cockpitHeadOffset + cockpitRaise) + t.forward * cockpitForward;
+            transform.rotation = yaw * Quaternion.Euler(cockpitPitch * cockpitTiltFollow + cockpitAccelPitch + cockpitLookDown, 0f, cockpitRoll * cockpitTiltFollow);
 
             cam.nearClipPlane = cockpitNearClip;
             float speed01 = Mathf.Clamp01(Mathf.Abs(speed) / Mathf.Max(1f, target.TopSpeed));

@@ -82,7 +82,13 @@ Kurallar:
 - İç mekân (kokpit kamerası kullanılıyor): `interior_cabin` (taban, kapı içleri, tavan döşemesi, sütunlar),
   `interior_dash` (torpido ve gösterge), `interior_driver_seat`.
   - Kabin içeriden bakınca **kapalı**: delik, eksik yüz, dışarıdan görünen boşluk olmasın.
-  - Direksiyon `mod_steering_*` slotunda.
+  - Direksiyon `mod_steering_*` slotunda. **Direksiyon kuralı (zorunlu):**
+    - Bütün varyantların pivotu göbek merkezinde (±3 mm) ve aynı konumda.
+    - Yerel +Z direksiyon kolonu boyunca ileri (torpidoya) bakar; simit yerel XY düzlemindedir; mesh sınırlarının
+      en ince ekseni Z'dir (kalınlık < çap/4). Oyun simidi yerel Z'de döndürür (tekerlek açısı × ~9).
+    - Simit **halka + göbek + 2–3 kol** olarak yapılır; dolu disk yasak, simidin içinden torpido görünür.
+      Aynı düzlemde üst üste yüz bırakılmaz (z-fighting): kollar halkadan ve göbekten en az 5 mm ayrık.
+    - Kolon 15–25° eğik; simidin üst kenarı `camera_cockpit`'ten bakınca torpido çizgisinin altında kalır, yolu kapatmaz.
 
 ### 3.4 Boş noktalar (Empty; mesh yok)
 | Ad | Konum | Yön (objenin yerel +Z'si) |
@@ -104,7 +110,8 @@ Ad biçimi: **`mod_<slot>_<sıra>_<ad>`** (ör. `mod_spoiler_4_swanneck`).
 
 Varyant kuralları:
 - Bir slotun **bütün varyantları aynı pivotta**: aynı yerel konum, dönüş 0.
-- Dışa aktarılan dosyada **her slotta sadece sıra 0 görünür**, diğerleri gizli. Oyun görünürlüğü zaten
+- Dışa aktarılan dosyada **her slotta sadece sıra 0 görünür**, diğerleri gizli. Gizlemeyi yalnız görünürlükle
+  (viewport) yap; **"render'da kapat" (hide_render) kullanma**, yoksa Unity'de MeshRenderer kapalı gelir. Oyun görünürlüğü zaten
   kendisi ayarlar, ama dosya da bu halde olsun.
 - "Yok" seçeneği olan slotlarda sıra 0 `..._0_none` adlı **mesh'siz boş obje**. Yer tutucu kutu koyma.
 - Çift taraflı slotlar `_left` / `_right` ile biter ve birlikte değişir (ör. `mod_skirts_2_track_left`,
@@ -175,6 +182,8 @@ Kurallar:
 - **`Glass_Tint`:** Surface = Transparent, `_Cull = 0` (çift yönlü), alfa ~0.35–0.5, ZWrite kapalı.
   Cam üçgenlerinin normalleri yine de **dışa** baksın.
 - Bir objede en fazla **2** malzeme yuvası (alt mesh). Mümkünse 1.
+- Torpido ve gösterge ekranları **yalnız `Screen`** kullanır: emisyon ≤ 0.6, ekran alanı torpido genişliğinin %25'ini geçmez.
+- `Interior_Dark` gerçekten koyu olsun (~0.06–0.08 gri); `Metal_Chrome` metalik ~0.9.
 - **İsteğe bağlı sabit malzeme:** `Screen`, torpido ve gösterge ekranları için, emisyonlu.
   Ekranlarda `Neon` kullanma: oyuncu neon rengini değiştirince ekran da değişir ve kokpitte göz alır.
 - Listede olmayan başka bir malzeme gerekirse önce kullanıcıya sor.
@@ -285,6 +294,8 @@ Bütün maddeleri ölçerek doğrula ve raporda göster:
     - Kabin kapalı.
 
 ### 10.3 Kendi kendine testler (Blender'da, teslimden önce)
+- **Direksiyon testi:** `mod_steering_*` varyantını yerel Z'de 90° ve 180° döndür; simit yerinde dönmeli, kaymamalı,
+  torpidoya ve kapıya girmemeli. Sonra geri al.
 - **Dönme testi:** her tekerleği yerel X'te 90° döndür. Tekerlekle birlikte dönmemesi gereken bir şey (kaliper,
   fren kapağı, çamurluk içi) dönüyorsa hiyerarşi yanlış. Sonra dönüşü geri al.
 - **Normaller:** bütün objelerde Recalculate Outside. Face Orientation görünümünde her yüz mavi (dışa) olmalı;

@@ -14,6 +14,9 @@ namespace Harvester.Race
     /// - Tekerlek başına bir "göbek" oluşturur: göbek direksiyonla döner ve kaliperi taşır, tekerlek (jantıyla) göbeğin içinde yuvarlanır.
     /// - Gövdeyi ve her yuvarlanan tekerleği ayrı birleşik mesh yapar; malzeme yuvaları korunur.
     ///   Parçalanmada birleşik mesh silinip asıl parçalar geri açılır.
+    /// - Direksiyonu (steering slotu) bir ara pivotta toplar ve RaceCar.SteerAngle'a göre kolon ekseninde döndürür.
+    ///   Direksiyon birleştirmeye katılmaz.
+    /// - Kokpit görünümünde (yalnız yerel oyuncunun kendi arabası, CarCamera açar) camlar çizilmez.
     /// </summary>
     [DisallowMultipleComponent]
     public class CarVisual : MonoBehaviour
@@ -43,6 +46,14 @@ namespace Harvester.Race
         [Tooltip("Bu yavaşlamanın üstü fren sayılır (m/sn²). Boşta yavaşlama 2.5, fren 22.")]
         [SerializeField] private float brakeDetectDecel = 5f;
 
+        [Header("Direksiyon (mod_steering_*)")]
+        [Tooltip("Direksiyon simidi açısı / ön tekerlek açısı")]
+        [SerializeField] private float steeringRatio = 9f;
+        [Tooltip("Direksiyon simidinin en büyük dönüşü (derece, iki yöne)")]
+        [SerializeField] private float steeringMaxAngle = 360f;
+        [Tooltip("Uzaktaki arabalarda direksiyon bu mesafenin ötesinde dönmez (m)")]
+        [SerializeField] private float steeringAnimateDistance = 25f;
+
         public CarDefinition Definition { get; private set; }
         public GameObject Model { get; private set; }
         public Transform CockpitAnchor { get; private set; }
@@ -52,6 +63,10 @@ namespace Harvester.Race
         public Transform[] Hubs { get; } = new Transform[4];
         public bool IsCombined => combinedObjects.Count > 0;
         public bool AnimateWheels { get; private set; } = true;
+        /// <summary>Direksiyon simidinin döndüğü ara pivot (yerel +Z = kolon ekseni, sürücüden ileri). Modelde yoksa null.</summary>
+        public Transform SteeringPivot { get; private set; }
+        /// <summary>Kokpit görünümü: camlar çizilmez. Yalnız yerel oyuncunun arabasında CarCamera açar.</summary>
+        public bool CockpitView { get; private set; }
 
         private RaceCar car;
         private readonly Dictionary<string, Transform> parts = new Dictionary<string, Transform>();
@@ -67,6 +82,8 @@ namespace Harvester.Race
         private bool geometryApplied, shadowStateKnown, distantShadows;
         private CarLoadout appliedLoadout;
         private bool braking;
+        private bool animateSteering = true;
+        private Quaternion steeringBaseRotation = Quaternion.identity;
         private float lastSpeed;
         private float smoothedDecel;
         private static bool warnedUnreadable;
@@ -77,6 +94,7 @@ namespace Harvester.Race
             public Material material;
             public int paint;       // -1 = boya değil
             public bool brakeLight;
+            public bool glass;      // şeffaf cam malzemesi (kokpit görünümünde gizlenir)
         }
         private readonly List<PaintTarget> targets = new List<PaintTarget>();
 
@@ -105,6 +123,7 @@ namespace Harvester.Race
                 if (!parts.ContainsKey(t.name)) parts.Add(t.name, t);
 
             BuildHubs(def);
+            BuildSteeringPivot(def);
             CockpitAnchor = Find(def.cockpitAnchor);
             foreach (var n in def.headlightAnchors) AddHeadlight(Find(n));
             return true;
@@ -134,7 +153,12 @@ namespace Harvester.Race
                     for (int n = 0; n < names.Length; n++)
                     {
                         var t = Find(names[n]);
-                        if (t != null && t.gameObject.activeSelf != (v == chosen)) t.gameObject.SetActive(v == chosen);
+                        if (t == null) continue;
+                        if (t.gameObject.activeSelf != (v == chosen)) t.gameObject.SetActive(v == chosen);
+                        // Blender'da gizli dışa aktarılan varyantların MeshRenderer'ı kapalı geliyor (4 arabada sıra 0 dışındaki
+                        // bütün varyantlar): seçilen varyantın renderer'larını aç, yoksa parça görünmez.
+                        if (v == chosen)
+                            foreach (var r in t.GetComponentsInChildren<Renderer>(true)) if (!r.enabled) r.enabled = true;
                     }
                 }
             }
@@ -146,6 +170,7 @@ namespace Harvester.Race
             }
             CollectTargets();
             ApplyColors();
+            ApplyCockpitView();
             VisibilityBudget.MarkCarDetails(Model);
             geometryApplied = true;
             modelRenderers = Model.GetComponentsInChildren<Renderer>(true);
@@ -187,6 +212,61 @@ namespace Harvester.Race
             }
         }
 
+        /// <summary>
+        /// Direksiyon slotunun bütün varyantlarını tek bir ara pivota bağlar. Pivot ilk mesh'li varyantın mesh sınırlarının
+        /// merkezinde (göbek); dönüş ekseni sınırların en ince ekseni (simit düzleminin normali), ileri (+Z) yönüne çevrilir.
+        /// Böylece modelin pivotu ya da ekseni kaymış olsa da simit kendi kolonu etrafında döner.
+        /// </summary>
+        private void BuildSteeringPivot(CarDefinition def)
+        {
+            SteeringPivot = null;
+            int slotIndex = def.SlotIndex("steering");
+            if (slotIndex < 0) return;
+            var slot = def.slots[slotIndex];
+            var variants = new List<Transform>();
+            Transform reference = null;
+            Mesh referenceMesh = null;
+            foreach (var variant in slot.variants)
+            {
+                if (variant.objectNames == null) continue;
+                foreach (var n in variant.objectNames)
+                {
+                    var t = Find(n);
+                    if (t == null || variants.Contains(t)) continue;
+                    variants.Add(t);
+                    var mf = t.GetComponent<MeshFilter>();
+                    if (referenceMesh == null && mf != null && mf.sharedMesh != null) { reference = t; referenceMesh = mf.sharedMesh; }
+                }
+            }
+            if (reference == null) return;
+
+            Bounds b = referenceMesh.bounds;
+            Vector3 ext = b.extents;
+            Vector3 axisLocal = ext.z <= ext.x && ext.z <= ext.y ? Vector3.forward : (ext.x <= ext.y ? Vector3.right : Vector3.up);
+            Transform root = Model.transform;
+            Vector3 axis = root.InverseTransformDirection(reference.TransformDirection(axisLocal)).normalized;
+            if (axis.z < 0f) axis = -axis; // kolon ekseni sürücüden ileri baksın
+            Vector3 center = root.InverseTransformPoint(reference.TransformPoint(b.center));
+            Vector3 up = Vector3.ProjectOnPlane(Vector3.up, axis);
+            if (up.sqrMagnitude < 1e-4f) up = Vector3.ProjectOnPlane(Vector3.forward, axis);
+
+            var pivot = new GameObject("DireksiyonPivot").transform;
+            pivot.SetParent(reference.parent != null ? reference.parent : root, false);
+            pivot.position = root.TransformPoint(center);
+            pivot.rotation = root.rotation * Quaternion.LookRotation(axis, up.normalized);
+            foreach (var t in variants) t.SetParent(pivot, true);
+            SteeringPivot = pivot;
+            steeringBaseRotation = pivot.localRotation;
+        }
+
+        private void UpdateSteering()
+        {
+            if (SteeringPivot == null || car == null || !animateSteering) return;
+            // Tekerlek sağa (artı) dönünce simit sürücüden bakınca saat yönünde döner: +Z ekseninde eksi açı.
+            float angle = Mathf.Clamp(-car.SteerAngle * steeringRatio, -steeringMaxAngle, steeringMaxAngle);
+            SteeringPivot.localRotation = steeringBaseRotation * Quaternion.AngleAxis(angle, Vector3.forward);
+        }
+
         private void AddHeadlight(Transform anchor)
         {
             if (anchor == null) return;
@@ -218,6 +298,7 @@ namespace Harvester.Race
             float distance = local ? 0 : Vector3.Distance(transform.position, observer.transform.position);
             float factor = HeadlightFactor(distance, local);
             AnimateWheels = local || distance < 80f;
+            animateSteering = local || distance < steeringAnimateDistance;
             bool far = !local && distance > 80f;
             if (modelRenderers != null && (!shadowStateKnown || distantShadows != far))
             {
@@ -229,11 +310,12 @@ namespace Harvester.Race
             { light.intensity = headlightIntensity * factor; light.enabled = factor > .001f; }
         }
 
-        private bool IsUnderHub(Transform t)
+        /// <summary>Kendi başına hareket eden parça mı (göbek ya da direksiyon)? Bunlar gövde birleştirmesine katılmaz.</summary>
+        private bool IsAnimatedPart(Transform t)
         {
             for (int i = 0; i < 4; i++)
                 if (Hubs[i] != null && t.IsChildOf(Hubs[i])) return true;
-            return false;
+            return SteeringPivot != null && t.IsChildOf(SteeringPivot);
         }
 
         // ------------------------------------------------------------------ Renk
@@ -265,15 +347,40 @@ namespace Harvester.Race
                     int paint = -1;
                     for (int p = 0; p < def.paints.Count; p++) if (def.paints[p].material == original) { paint = p; break; }
                     bool brake = original == def.brakeLightMaterial;
-                    if (paint < 0 && !brake) continue;
+                    bool glass = IsGlass(original);
+                    if (paint < 0 && !brake && !glass) continue;
                     var copy = Copy(original); mats[m] = copy; changed = true;
                     // Önceki MPB'yi temizle; artık shader verisi malzeme sabit tamponunda tutulur.
                     r.SetPropertyBlock(null, m);
-                    if (seen.Add(copy)) targets.Add(new PaintTarget { material = copy, paint = paint, brakeLight = brake });
+                    if (seen.Add(copy)) targets.Add(new PaintTarget { material = copy, paint = paint, brakeLight = brake, glass = glass });
                 }
                 if (changed) r.sharedMaterials = mats;
             }
         }
+        /// <summary>Şeffaf cam malzemesi mi (Glass_Tint ya da şeffaf kuyruktaki herhangi bir malzeme).</summary>
+        private static bool IsGlass(Material m)
+        {
+            return m != null && (m.renderQueue >= (int)RenderQueue.Transparent || m.name.StartsWith("Glass"));
+        }
+
+        /// <summary>
+        /// Kokpit görünümünü açar/kapar. Açıkken bu arabanın cam malzemesi kopyalarının ileri geçişi kapatılır: cam hiç
+        /// çizilmez. (Glass_Tint koyu, metalik ve önceden çarpılmış alfalı; gece sisinde gökyüzünü yansıtıp ön camı düz bej bir
+        /// levhaya çeviriyordu.) Kopyalar arabaya özel olduğundan diğer arabalar ve birleşik mesh'teki öteki malzemeler etkilenmez.
+        /// </summary>
+        public void SetCockpitView(bool on)
+        {
+            if (CockpitView == on) return;
+            CockpitView = on;
+            ApplyCockpitView();
+        }
+
+        private void ApplyCockpitView()
+        {
+            foreach (var t in targets)
+                if (t.glass && t.material != null) t.material.SetShaderPassEnabled("UniversalForward", !CockpitView);
+        }
+
         private void ApplyColors()
         {
             var def = Definition;
@@ -300,6 +407,7 @@ namespace Harvester.Race
         {
             if (Model == null || car == null) return;
             if (Time.unscaledTime >= nextLightBudget) UpdateLightBudget();
+            if (!car.IsEliminated) UpdateSteering();
             // Frenleme: ileri hızın düşüşünden (sahibinde de uzak kopyada da aynı kural)
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
@@ -332,7 +440,7 @@ namespace Harvester.Race
             var sources = new List<Renderer>();
             foreach (var r in root.GetComponentsInChildren<MeshRenderer>(false))
             {
-                if (!r.enabled || (body && IsUnderHub(r.transform))) continue;
+                if (!r.enabled || (body && IsAnimatedPart(r.transform))) continue;
                 var mf = r.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null) continue;
                 var mesh = mf.sharedMesh;
@@ -412,6 +520,8 @@ namespace Harvester.Race
         {
             if (Model == null) return;
             Uncombine();
+            // Enkazda camlar normal görünsün
+            if (CockpitView) { CockpitView = false; ApplyCockpitView(); }
             for (int i = 0; i < headLights.Count; i++) if (headLights[i] != null) headLights[i].enabled = false;
 
             Vector3 center = transform.position + transform.up * 0.5f;
@@ -466,6 +576,7 @@ namespace Harvester.Race
 
             Model = null;
             CockpitAnchor = null;
+            SteeringPivot = null;
             for (int i = 0; i < 4; i++) Wheels[i] = Hubs[i] = null;
             parts.Clear();
             targets.Clear();
@@ -512,6 +623,7 @@ namespace Harvester.Race
             foreach (var material in materialCopies.Values) if (material != null) Destroy(material);
             materialCopies.Clear(); originalMaterials.Clear();
             CockpitAnchor = null;
+            SteeringPivot = null;
             for (int i = 0; i < 4; i++) Wheels[i] = Hubs[i] = null;
             parts.Clear();
             targets.Clear();
