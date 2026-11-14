@@ -1,51 +1,109 @@
 {
-  "uzunluk_m": 2491.8,
-  "nokta_sayisi": 998,
+  "uzunluk_m": 5028.4,
+  "korunan_ilk_bolum_uzunluk_m": 2339.4,
+  "korunan_ilk_bolum_nokta_sayisi": 937,
+  "korunan_ilk_bolum_maks_fark_m": 0.0,
+  "yeni_bolum_uzunluk_m": 2689.0,
+  "nokta_sayisi": 2013,
   "max_nokta_araligi_m": 2.499,
   "yol_genisligi_m": 14.0,
   "baslangic_m": 75.0,
-  "bitis_m": 2453.8,
+  "bitis_m": 4990.4,
   "baslangic_duzlugu_m": 95.0,
   "bitis_duzlugu_m": 165.0,
   "en_dik_egim_yuzde": 10.6,
   "en_dik_egim_konum_m": 1164.7,
+  "yeni_bolum_en_dik_egim_yuzde": 10.6,
+  "yeni_bolum_en_dik_egim_konum_m": 2719.2,
   "en_fazla_yanal_egim_derece": 3.5,
   "en_dar_merkez_yaricap_m": 23.58,
   "en_dar_ic_yaricap_m": 16.58,
   "en_dar_yaricap_konum_m": 594.8,
+  "yeni_bolum_en_dar_merkez_yaricap_m": 29.71,
+  "yeni_bolum_en_dar_ic_yaricap_m": 22.71,
+  "yeni_bolum_en_dar_yaricap_konum_m": 4121.2,
+  "en_kisa_komsu_olmayan_yol_mesafesi_2b_m": 52.2,
+  "yeni_bolum_firkete_kollari_arasi_en_kisa_2b_m": 62.34,
+  "yol_kendisiyle_kesisme": 0,
+  "yol_araziyle_kesisme": 0,
   "en_alcak_tavan_acikligi_m": 7.86,
   "irtifa_baslangic_m": 0.0,
-  "irtifa_bitis_m": 195.19,
+  "irtifa_eski_bitis_m": 195.19,
+  "irtifa_bitis_m": 414.17,
+  "toplam_firkete_sayisi": 12,
+  "yeni_firkete_sayisi": 7,
   "firketeler": [
     {
       "ad": "Firkete_1_Sol",
-      "baslangic_m": 280.0,
-      "bitis_m": 370.0,
+      "baslangic_m": 282.4,
+      "bitis_m": 369.9,
       "aci_derece": -162.0
     },
     {
       "ad": "Firkete_2_Sag",
-      "baslangic_m": 535.0,
-      "bitis_m": 625.0,
+      "baslangic_m": 537.4,
+      "bitis_m": 624.8,
       "aci_derece": 164.0
     },
     {
       "ad": "Firkete_3_Sol",
-      "baslangic_m": 955.0,
-      "bitis_m": 1047.0,
+      "baslangic_m": 959.7,
+      "bitis_m": 1049.7,
       "aci_derece": -160.0
     },
     {
       "ad": "Firkete_4_Sag",
-      "baslangic_m": 1232.0,
-      "bitis_m": 1324.0,
+      "baslangic_m": 1237.2,
+      "bitis_m": 1327.1,
       "aci_derece": 160.0
     },
     {
       "ad": "Firkete_5_Sol",
-      "baslangic_m": 1524.0,
-      "bitis_m": 1618.0,
+      "baslangic_m": 1532.1,
+      "bitis_m": 1622.1,
       "aci_derece": -158.0
+    },
+    {
+      "ad": "Firkete_6_Sag",
+      "baslangic_m": 2466.8,
+      "bitis_m": 2576.8,
+      "aci_derece": 162.0
+    },
+    {
+      "ad": "Firkete_7_Sol",
+      "baslangic_m": 2784.2,
+      "bitis_m": 2894.2,
+      "aci_derece": -162.0
+    },
+    {
+      "ad": "Firkete_8_Sag",
+      "baslangic_m": 3106.6,
+      "bitis_m": 3216.6,
+      "aci_derece": 162.0
+    },
+    {
+      "ad": "Firkete_9_Sol",
+      "baslangic_m": 3436.5,
+      "bitis_m": 3546.4,
+      "aci_derece": -162.0
+    },
+    {
+      "ad": "Firkete_10_Sag",
+      "baslangic_m": 3763.9,
+      "bitis_m": 3873.8,
+      "aci_derece": 162.0
+    },
+    {
+      "ad": "Firkete_11_Sol",
+      "baslangic_m": 4088.7,
+      "bitis_m": 4198.7,
+      "aci_derece": -162.0
+    },
+    {
+      "ad": "Firkete_12_Sag",
+      "baslangic_m": 4406.1,
+      "bitis_m": 4516.1,
+      "aci_derece": 160.0
     }
   ],
   "tuneller": [
@@ -70,67 +128,20 @@
       "max_ceiling_m": 9.2
     }
   ],
-  "arazi_ucgen": 42382,
-  "toplam_ucgen": 87586,
-  "mesh_sayisi": 26,
+  "arazi_ucgen": 79936,
+  "yol_bariyer_tunel_ucgen": 86818,
+  "toplam_ucgen": 166754,
+  "mesh_sayisi": 42,
   "yerlesim_sayilari": {
     "Agac_Cam_01": 1211,
-    "Agac_Ladin_01": 1260,
-    "Agac_KarliCam_01": 1077,
-    "Cimen_Obek_01": 3293,
-    "Kaya_Buyuk_01": 131,
-    "Kaya_Orta_01": 223,
+    "Agac_Ladin_01": 1209,
+    "Agac_KarliCam_01": 870,
+    "Cimen_Obek_01": 3243,
+    "Kaya_Buyuk_01": 123,
+    "Kaya_Orta_01": 213,
     "Tabela_KeskinViraj": 30,
     "Tabela_KayaDusebilir": 18
   },
-  "modeller": [
-    {
-      "model": "Agac_Cam_01",
-      "lod0_tris": 416,
-      "lod1_tris": 96,
-      "toplam_tris": 512
-    },
-    {
-      "model": "Agac_Ladin_01",
-      "lod0_tris": 452,
-      "lod1_tris": 100,
-      "toplam_tris": 552
-    },
-    {
-      "model": "Agac_KarliCam_01",
-      "lod0_tris": 312,
-      "lod1_tris": 120,
-      "toplam_tris": 432
-    },
-    {
-      "model": "Cimen_Obek_01",
-      "lod0_tris": 216,
-      "lod1_tris": 30,
-      "toplam_tris": 246
-    },
-    {
-      "model": "Kaya_Buyuk_01",
-      "lod0_tris": 320,
-      "lod1_tris": 80,
-      "toplam_tris": 400
-    },
-    {
-      "model": "Kaya_Orta_01",
-      "lod0_tris": 320,
-      "lod1_tris": 80,
-      "toplam_tris": 400
-    },
-    {
-      "model": "Tabela_KeskinViraj",
-      "lod0_tris": 68,
-      "lod1_tris": 64,
-      "toplam_tris": 132
-    },
-    {
-      "model": "Tabela_KayaDusebilir",
-      "lod0_tris": 50,
-      "lod1_tris": 50,
-      "toplam_tris": 100
-    }
-  ]
+  "yerlesimden_cikarilan_yeni_yol_ustu": 71,
+  "yerlesimden_cikarilan_eski_bitis": 255
 }

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Harvester — A1 Dağ Tırmanışı Haritası (1. + 2. Aşama: Yol/Tünel/Bariyer + Detaylı Dağ Arazisi + Çevre Yerleşimi)
+Harvester — A2 Dağ Tırmanışı Haritası: Zirveye Uzatma (1. Aşama: ~5 km Yol + Üst Üste Firketeler + Kaba Arazi)
 Üretim Betiği (Blender 4.x arka plan kipinde çalışır: ~/.local/bin/blender -b -P uret_dag_tirmanisi.py)
 
-2. Aşama Kuralları (docs/GOREVLER.md):
-- Dag_Yol.fbx'teki yol yüzeyi (Yol_*), bariyer (Bariyer_*) ve tünel (Tunel_*) geometrisi ve Dag_Merkez.json DEĞİŞMEZ.
-- Arazi mesh'leri (Arazi_*) daha detaylı yapılabilir; isimleri korunur. Ayrıca Dag_Arazi.fbx olarak da dışa aktarılır.
-- Ağaç/kaya/çimen/tabela modelleri ayrı FBX (uret_cevre_modelleri.py ile üretilir, LOD0 <= 1.500, LOD1 <= 400).
-- Konumları Dag_Yerlesim.json: [{"model":"Agac_Cam_01","p":[x,y,z],"r":ry,"s":olcek},...].
-- Ağaçlar yola/bariyere 3 m'den yakın (merkezden < 11.5 m), tünel ağzının önüne ve yolun/tünelin üstüne gelmez.
-- Bütçe: ağaç <= 4.000, çimen öbeği <= 6.000, malzeme <= 12, doku <= 1024 px.
-- Yol seviyesinden birkaç önizleme görseli + üstten harita BlenderSources/maps/DagTirmanisi/onizleme/ altına üretilir.
+A2 1. Aşama Kuralları (docs/GOREVLER.md):
+- Mevcut yolun eski bitiş düzlüğüne kadar olan kısmı (ilk ~2.340 m: 0..936 indeksli Dag_Merkez.json noktaları,
+  yol yüzeyi, bariyerler, tüneller) BİREBİR AYNI KALIR. Eski bitiş düzlüğü ve kemeri kaldırılır, yol oradan devam eder.
+- Yeni bölüm (~2,69 km, toplam ~5,03 km): dağ yamacında üst üste dizilmiş 7 yeni saç tokası viraj (Firkete_6..12,
+  toplam 12 firkete), aralarda kısa düzlük/teras geçişleri, zirvede 165 m düzlük + bitiş kemeri.
+- Ölçüler: genişlik 14 m, firkete iç yarıçapı >= 12 m (en dar 16.58 m, yeni bölümde 22.74 m), eğim <= %12 (en dik %10.6),
+  yanal eğim <= 6° (en fazla 3.5°), tünel tavanı >= 7 m (en alçak 7.86 m).
+- İlk bölümdeki mevcut çevre yerleşimi (Dag_Yerlesim.json) aynen korunur; yeni yolun üstünden geçtiği veya
+  kaldırılan eski bitiş düzlüğündeki ağaçlar/öğeler çıkarılır. Yeni bölüme bu aşamada çevre detayı eklenmez.
 """
 
 import os
@@ -19,10 +20,9 @@ import sys
 import json
 import math
 import random
-import hashlib
 import bpy
 import bmesh
-from mathutils import Vector, Matrix, Euler
+from mathutils import Vector, Euler
 from mathutils.bvhtree import BVHTree
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +33,7 @@ import uret_cevre_modelleri as cevre_modelleri
 
 
 # ---------------------------------------------------------------------------
-# Sabitler ve Ölçüler (1. Aşama ile BİREBİR AYNI — Değiştirilemez)
+# Sabitler ve Ölçüler (1. Aşama ile BİREBİR AYNI)
 # ---------------------------------------------------------------------------
 ROAD_WIDTH = 14.0           # Asfalt şerit genişliği (m)
 HALF_WIDTH = ROAD_WIDTH * 0.5
@@ -43,9 +43,10 @@ BARRIER_HEIGHT = 0.92       # Bariyer yol üstü yüksekliği (m)
 BARRIER_DEPTH = 1.25        # Bariyer yol altı etek derinliği (m)
 LINE_HEIGHT = 0.018         # Yol çizgilerinin asfalttan yüksekliği (m)
 
-START_M = 75.0              # Başlangıç dizilişi ön sırası (Harvester ~26 m'de, 0..95 m düz)
+START_M = 75.0              # Başlangıç dizilişi ön sırası (değişmez)
 FINISH_MARGIN = 38.0        # Bitiş kemerinden son duvara kalan güvenli fren mesafesi (m)
 SAMPLE_STEP = 2.5           # Dag_Merkez.json nokta aralığı (m, <= 4.0 m)
+PRESERVED_P1_LAST_IDX = 936 # İlk ~2.340 m'nin son örnek indeksi (s = 2339.381 m, toplam 937 nokta: 0..936)
 
 
 # ---------------------------------------------------------------------------
@@ -97,9 +98,11 @@ def make_mat(name, color, metallic=0.0, roughness=0.75, emission=None, emission_
 
 
 # ---------------------------------------------------------------------------
-# 1. Yol Orta Çizgisi Tasarımı (1. Aşama ile BİREBİR AYNI — Değiştirilemez)
+# 1. Yol Orta Çizgisi Tasarımı
+#    - İlk ~2.340 m (0..936 indeksleri) A1'dekiyle BİREBİR AYNI
+#    - 2.340 m'den ~5.028 m'ye uzanan yeni bölüm: yamaçta üst üste 7 firkete + zirvede 165 m düzlük
 # ---------------------------------------------------------------------------
-SEGMENTS = [
+SEGMENTS_P1 = [
     (95.0,     0.0, 0.000, "Baslangic_Duzlugu",   0),
     (90.0,    35.0, 0.085, "Etek_Kivrimi",       -1),
     (95.0,     0.0, 0.102, "Etek_Duzlugu",       -1),
@@ -119,18 +122,83 @@ SEGMENTS = [
     (195.0,   36.0, 0.102, "Yuksek_Yamac",       +1),
     (110.0,  -56.0, 0.085, "Zirve_Viraji",       -1),
     (120.0,   15.0, 0.065, "Zirve_Yaklasim",     -1),
-    (165.0,    0.0, 0.000, "Bitis_Duzlugu",       0),
+    (165.0,    0.0, 0.000, "Bitis_Duzlugu_Eski",  0),
+]
+
+# Yeni uzatma bölümü (~2.689 m 3B uzunluk, dağ yamacında üst üste 7 saç tokası viraj + zirvede 165 m düzlük)
+EXT_SEGMENTS = [
+    (125.0,    6.0, 0.095, "Yamac_Gecisi_2",      -1),  # psi: -54° -> -48°
+    (112.0,  162.0, 0.060, "Firkete_6_Sag",       -1),  # psi: -48° -> +114° (R_ic = 22.7 m)
+    (205.0,   16.0, 0.106, "Terase_1",            +1),  # psi: +114° -> +130°
+    (112.0, -162.0, 0.060, "Firkete_7_Sol",       +1),  # psi: +130° -> -32° (R_ic = 22.7 m)
+    (210.0,  -16.0, 0.106, "Terase_2",            -1),  # psi: -32° -> -48°
+    (112.0,  162.0, 0.060, "Firkete_8_Sag",       -1),  # psi: -48° -> +114° (R_ic = 22.7 m)
+    (215.0,   16.0, 0.106, "Terase_3",            +1),  # psi: +114° -> +130°
+    (112.0, -162.0, 0.060, "Firkete_9_Sol",       +1),  # psi: +130° -> -32° (R_ic = 22.7 m)
+    (215.0,  -16.0, 0.105, "Kar_Siniri_Gecisi",   -1),  # psi: -32° -> -48°
+    (112.0,  162.0, 0.060, "Firkete_10_Sag",      -1),  # psi: -48° -> +114° (R_ic = 22.7 m)
+    (210.0,   16.0, 0.105, "Kar_Yamaci_1",        +1),  # psi: +114° -> +130°
+    (112.0, -162.0, 0.060, "Firkete_11_Sol",      +1),  # psi: +130° -> -32° (R_ic = 22.7 m)
+    (205.0,  -16.0, 0.104, "Kar_Yamaci_2",        -1),  # psi: -32° -> -48°
+    (112.0,  160.0, 0.058, "Firkete_12_Sag",      -1),  # psi: -48° -> +112° (R_ic = 23.1 m)
+    (205.0,  -35.0, 0.096, "Zirve_Sirti",         +1),  # psi: +112° -> +77°
+    (140.0,  -25.0, 0.068, "Zirve_Yaklasim_2",    -1),  # psi: +77° -> +52°
+    (165.0,    0.0, 0.000, "Bitis_Duzlugu",        0),  # Zirvede 165 m karlı bitiş düzlüğü
 ]
 
 
-def generate_centerline():
+def _compute_frames_orientation(sampled, flat_start_horiz=95.0, flat_end_horiz=None):
+    n_s = len(sampled)
+    for i in range(n_s):
+        prev_p = sampled[max(0, i - 1)]
+        next_p = sampled[min(n_s - 1, i + 1)]
+        fx = next_p["x"] - prev_p["x"]
+        fy = next_p["y"] - prev_p["y"]
+        fz = next_p["z"] - prev_p["z"]
+        flen = math.sqrt(fx * fx + fy * fy + fz * fz)
+        fx, fy, fz = fx / flen, fy / flen, fz / flen
+
+        rx0, ry0, rz0 = fz, 0.0, -fx
+        rlen = math.hypot(rx0, rz0)
+        rx0, rz0 = rx0 / rlen, rz0 / rlen
+
+        ux0 = fy * rz0 - fz * ry0
+        uy0 = fz * rx0 - fx * rz0
+        uz0 = fx * ry0 - fy * rx0
+        ulen = math.sqrt(ux0 * ux0 + uy0 * uy0 + uz0 * uz0)
+        ux0, uy0, uz0 = ux0 / ulen, uy0 / ulen, uz0 / ulen
+
+        k_val = sampled[i]["k"]
+        bank_deg = max(-3.5, min(3.5, k_val * 85.0))
+        if sampled[i]["s_horiz"] < flat_start_horiz or (flat_end_horiz is not None and sampled[i]["s_horiz"] > flat_end_horiz):
+            bank_deg = 0.0
+        bank_rad = math.radians(bank_deg)
+        cb, sb = math.cos(bank_rad), math.sin(bank_rad)
+
+        rx = rx0 * cb - ux0 * sb
+        ry = ry0 * cb - uy0 * sb
+        rz = rz0 * cb - uz0 * sb
+
+        ux = ux0 * cb + rx0 * sb
+        uy = uy0 * cb + ry0 * sb
+        uz = uz0 * cb + rz0 * sb
+
+        sampled[i]["fwd"] = (fx, fy, fz)
+        sampled[i]["right"] = (rx, ry, rz)
+        sampled[i]["right_flat"] = (rx0, 0.0, rz0)
+        sampled[i]["up"] = (ux, uy, uz)
+        sampled[i]["bank_deg"] = bank_deg
+
+
+def generate_phase1_full_centerline():
+    """A1 1. aşamadaki 998 noktayı birebir aynı matematikle üretir."""
     ds = 0.25
     fine_pts = []
     raw_grades = []
     seg_meta = []
 
     s_acc = 0.0
-    for seg_len, turn_deg, grade, name, cliff_side in SEGMENTS:
+    for seg_len, turn_deg, grade, name, cliff_side in SEGMENTS_P1:
         seg_start = s_acc
         seg_end = s_acc + seg_len
         seg_meta.append({
@@ -149,7 +217,7 @@ def generate_centerline():
     curvatures = []
     cliff_sides = []
     seg_names = []
-    for seg_len, turn_deg, grade, name, cliff_side in SEGMENTS:
+    for seg_len, turn_deg, grade, name, cliff_side in SEGMENTS_P1:
         n = int(round(seg_len / ds))
         turn_rad = math.radians(turn_deg)
         r = 0.25
@@ -218,7 +286,7 @@ def generate_centerline():
         "k": 0.0,
         "grade": 0.0,
         "cliff_side": 0,
-        "seg_name": "Bitis_Duzlugu",
+        "seg_name": "Bitis_Duzlugu_Eski",
     })
 
     total_3d_len = fine_pts[-1]["s_3d"]
@@ -248,48 +316,168 @@ def generate_centerline():
             "seg_name": a["seg_name"],
         })
 
-    n_s = len(sampled)
-    for i in range(n_s):
-        prev_p = sampled[max(0, i - 1)]
-        next_p = sampled[min(n_s - 1, i + 1)]
-        fx = next_p["x"] - prev_p["x"]
-        fy = next_p["y"] - prev_p["y"]
-        fz = next_p["z"] - prev_p["z"]
-        flen = math.sqrt(fx * fx + fy * fy + fz * fz)
-        fx, fy, fz = fx / flen, fy / flen, fz / flen
-
-        rx0, ry0, rz0 = fz, 0.0, -fx
-        rlen = math.hypot(rx0, rz0)
-        rx0, rz0 = rx0 / rlen, rz0 / rlen
-
-        ux0 = fy * rz0 - fz * ry0
-        uy0 = fz * rx0 - fx * rz0
-        uz0 = fx * ry0 - fy * rx0
-        ulen = math.sqrt(ux0 * ux0 + uy0 * uy0 + uz0 * uz0)
-        ux0, uy0, uz0 = ux0 / ulen, uy0 / ulen, uz0 / ulen
-
-        k_val = sampled[i]["k"]
-        bank_deg = max(-3.5, min(3.5, k_val * 85.0))
-        if sampled[i]["s_horiz"] < 95.0 or sampled[i]["s_horiz"] > (total_horiz_len - 165.0):
-            bank_deg = 0.0
-        bank_rad = math.radians(bank_deg)
-        cb, sb = math.cos(bank_rad), math.sin(bank_rad)
-
-        rx = rx0 * cb - ux0 * sb
-        ry = ry0 * cb - uy0 * sb
-        rz = rz0 * cb - uz0 * sb
-
-        ux = ux0 * cb + rx0 * sb
-        uy = uy0 * cb + ry0 * sb
-        uz = uz0 * cb + rz0 * sb
-
-        sampled[i]["fwd"] = (fx, fy, fz)
-        sampled[i]["right"] = (rx, ry, rz)
-        sampled[i]["right_flat"] = (rx0, 0.0, rz0)
-        sampled[i]["up"] = (ux, uy, uz)
-        sampled[i]["bank_deg"] = bank_deg
-
+    _compute_frames_orientation(sampled, 95.0, total_horiz_len - 165.0)
     return sampled, seg_meta
+
+
+def generate_centerline():
+    """
+    İlk 937 noktayı (0..936, ilk ~2.340 m) A1'den birebir korur,
+    936. noktadan itibaren (~2.339,4 m) yeni 7 firketeli dağ tırmanışı uzatmasını ekler.
+    """
+    sampled_p1, seg_meta_p1 = generate_phase1_full_centerline()
+    preserved = [dict(f) for f in sampled_p1[:PRESERVED_P1_LAST_IDX + 1]]
+
+    # İlk 19 segmentin meta bilgisini koru
+    seg_meta = list(seg_meta_p1[:19])
+
+    anchor = preserved[-1]
+    s_3d_start = anchor["s"]
+    s_horiz_start = anchor["s_horiz"]
+    x, y, z = anchor["x"], anchor["y"], anchor["z"]
+    psi = anchor["psi"]  # -54.0 derece (tam düz ve yatay geçiş noktası)
+
+    ds = 0.25
+    s_acc = s_horiz_start
+    for seg_len, turn_deg, grade, name, cliff_side in EXT_SEGMENTS:
+        seg_start = s_acc
+        seg_end = s_acc + seg_len
+        seg_meta.append({
+            "name": name,
+            "start_m": seg_start,
+            "end_m": seg_end,
+            "length_m": seg_len,
+            "turn_deg": turn_deg,
+            "cliff_side": cliff_side,
+        })
+        s_acc = seg_end
+
+    ext_horiz_len = sum(s[0] for s in EXT_SEGMENTS)
+    n_ext = int(round(ext_horiz_len / ds))
+
+    curvatures = []
+    raw_grades = []
+    cliff_sides = []
+    seg_names = []
+    for seg_len, turn_deg, grade, name, cliff_side in EXT_SEGMENTS:
+        n = int(round(seg_len / ds))
+        turn_rad = math.radians(turn_deg)
+        r = 0.25
+        k_peak = turn_rad / ((1.0 - r) * seg_len) if seg_len > 0 else 0.0
+        for i in range(n):
+            u = (i + 0.5) / n
+            if u < r:
+                k = k_peak * 0.5 * (1.0 - math.cos(math.pi * u / r))
+            elif u > 1.0 - r:
+                k = k_peak * 0.5 * (1.0 - math.cos(math.pi * (1.0 - u) / r))
+            else:
+                k = k_peak
+            curvatures.append(k)
+            raw_grades.append(grade)
+            cliff_sides.append(cliff_side)
+            seg_names.append(name)
+
+    win = int(round(20.0 / ds))
+    smooth_grades = []
+    for i in range(n_ext):
+        lo = max(0, i - win)
+        hi = min(n_ext - 1, i + win)
+        g = sum(raw_grades[lo:hi + 1]) / (hi - lo + 1)
+        s = i * ds
+        # İlk 5 m yatay, 5..20 m yumuşak eğim geçişi; son 160 m zirve bitiş düzlüğü yatay
+        if s <= 5.0 or s >= (ext_horiz_len - 160.0):
+            g = 0.0
+        elif s < 20.0:
+            g *= (s - 5.0) / 15.0
+        elif s > (ext_horiz_len - 175.0):
+            g *= ((ext_horiz_len - 160.0) - s) / 15.0
+        smooth_grades.append(g)
+
+    fine_ext = []
+    s_3d = s_3d_start
+    for i in range(n_ext):
+        k = curvatures[i]
+        g = smooth_grades[i]
+        fine_ext.append({
+            "s_horiz": s_horiz_start + i * ds,
+            "s_3d": s_3d,
+            "x": x,
+            "y": y,
+            "z": z,
+            "psi": psi,
+            "k": k,
+            "grade": g,
+            "cliff_side": cliff_sides[i],
+            "seg_name": seg_names[i],
+        })
+        psi += k * ds
+        dx = math.sin(psi) * ds
+        dz = math.cos(psi) * ds
+        dy = g * ds
+        x += dx
+        y += dy
+        z += dz
+        s_3d += math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    fine_ext.append({
+        "s_horiz": s_horiz_start + n_ext * ds,
+        "s_3d": s_3d,
+        "x": x,
+        "y": y,
+        "z": z,
+        "psi": psi,
+        "k": 0.0,
+        "grade": 0.0,
+        "cliff_side": 0,
+        "seg_name": "Bitis_Duzlugu",
+    })
+
+    rem_3d_len = fine_ext[-1]["s_3d"] - s_3d_start
+    num_ext_samples = int(math.ceil(rem_3d_len / SAMPLE_STEP))
+    step_ext = rem_3d_len / num_ext_samples
+
+    ext_sampled = []
+    idx = 0
+    for j in range(1, num_ext_samples + 1):
+        target_s = min(s_3d_start + j * step_ext, fine_ext[-1]["s_3d"])
+        while idx < len(fine_ext) - 2 and fine_ext[idx + 1]["s_3d"] < target_s:
+            idx += 1
+        a = fine_ext[idx]
+        b = fine_ext[idx + 1]
+        span = b["s_3d"] - a["s_3d"]
+        t = (target_s - a["s_3d"]) / span if span > 1e-8 else 0.0
+        ext_sampled.append({
+            "s": target_s,
+            "s_horiz": a["s_horiz"] + (b["s_horiz"] - a["s_horiz"]) * t,
+            "x": a["x"] + (b["x"] - a["x"]) * t,
+            "y": a["y"] + (b["y"] - a["y"]) * t,
+            "z": a["z"] + (b["z"] - a["z"]) * t,
+            "psi": a["psi"] + (b["psi"] - a["psi"]) * t,
+            "k": a["k"] + (b["k"] - a["k"]) * t,
+            "grade": a["grade"] + (b["grade"] - a["grade"]) * t,
+            "cliff_side": a["cliff_side"],
+            "seg_name": a["seg_name"],
+        })
+
+    # Uzatma kısmının yönelimlerini (fwd, right, up, bank_deg) hesapla;
+    # ilk 937 noktanın (preserved[0..936]) yönelim vektörlerine DOKUNMA (birebir aynı kalsın)
+    combined_for_ext = [preserved[-1]] + ext_sampled
+    total_horiz_end = s_horiz_start + ext_horiz_len
+    _compute_frames_orientation(combined_for_ext, s_horiz_start + 8.0, total_horiz_end - 165.0)
+
+    all_frames = preserved + combined_for_ext[1:]
+
+    # Segment başlangıç/bitiş 3B mesafelerini güncelle
+    for sm in seg_meta:
+        seg_frames = [f["s"] for f in all_frames if f["seg_name"] == sm["name"]]
+        if seg_frames:
+            sm["start_3d_m"] = round(min(seg_frames), 1)
+            sm["end_3d_m"] = round(max(seg_frames), 1)
+        else:
+            sm["start_3d_m"] = round(sm["start_m"], 1)
+            sm["end_3d_m"] = round(sm["end_m"], 1)
+
+    return all_frames, seg_meta, sampled_p1
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +574,6 @@ class MapMeshBuilder:
                 f = bm.faces.new([bm_verts[i] for i in f_verts])
                 f.material_index = mat_idx
             except ValueError:
-                # Aynı köşelerle ters yönlü yüz zaten varsa (çift yönlü duvar için) kopya köşelerle oluştur
                 try:
                     dup_verts = [bm.verts.new(self.verts[i]) for i in f_verts]
                     f = bm.faces.new(dup_verts)
@@ -413,7 +600,7 @@ class MapMeshBuilder:
 
 
 # ---------------------------------------------------------------------------
-# 2. Yol, Çizgiler, Bariyerler, Tüneller ve Kemerler (1. Aşama ile BİREBİR AYNI)
+# 2. Yol, Çizgiler, Bariyerler, Tüneller ve Kemerler
 # ---------------------------------------------------------------------------
 def build_road_and_markings(frames, mats):
     n = len(frames) - 1
@@ -460,6 +647,10 @@ def build_road_and_markings(frames, mats):
 
 
 def build_barriers(frames, mats):
+    """
+    İlk 937 noktadaki (0..936) bariyerler A1'deki 125'lik dilimlerle (Bariyer_01..08) birebir korunur.
+    Yeni bölüm (936..n) Bariyer_09..16 olarak 8 dilimde üretilir.
+    """
     n = len(frames) - 1
     xi = HALF_WIDTH + SHOULDER             # 7.60 m (bariyer iç yüzü)
     xo = xi + BARRIER_THICK                # 8.25 m (bariyer dış yüzü)
@@ -483,15 +674,29 @@ def build_barriers(frames, mats):
         ( xo, -BARRIER_DEPTH),
     ]
 
-    num_chunks = 8
-    chunk_size = math.ceil(n / num_chunks)
     barrier_objs = []
-    for c in range(num_chunks):
-        k0 = c * chunk_size
-        k1 = min(n, (c + 1) * chunk_size)
+    # 1) Korunan ilk bölüm: Bariyer_01..08 (0..936)
+    p1_chunk = 125
+    for c in range(8):
+        k0 = c * p1_chunk
+        k1 = min(PRESERVED_P1_LAST_IDX, (c + 1) * p1_chunk)
         if k0 >= k1:
             continue
         b_mb = MapMeshBuilder(f"Bariyer_{c + 1:02d}", [mats["Mat_Bariyer"], mats["Mat_Reflektor"]])
+        b_mb.extrude_profile(frames, left_prof, k0, k1, mat_map={3: 1})
+        b_mb.extrude_profile(frames, right_prof, k0, k1, mat_map={2: 1})
+        barrier_objs.append(b_mb.build())
+
+    # 2) Yeni uzatma bölümü: Bariyer_09..16 (936..n)
+    ext_steps = n - PRESERVED_P1_LAST_IDX
+    ext_chunks = 8
+    ext_chunk_size = math.ceil(ext_steps / ext_chunks)
+    for c in range(ext_chunks):
+        k0 = PRESERVED_P1_LAST_IDX + c * ext_chunk_size
+        k1 = min(n, PRESERVED_P1_LAST_IDX + (c + 1) * ext_chunk_size)
+        if k0 >= k1:
+            continue
+        b_mb = MapMeshBuilder(f"Bariyer_{c + 9:02d}", [mats["Mat_Bariyer"], mats["Mat_Reflektor"]])
         b_mb.extrude_profile(frames, left_prof, k0, k1, mat_map={3: 1})
         b_mb.extrude_profile(frames, right_prof, k0, k1, mat_map={2: 1})
         barrier_objs.append(b_mb.build())
@@ -648,39 +853,37 @@ def build_arches(frames, mats):
 
 
 # ---------------------------------------------------------------------------
-# 2.5 Detaylı Dağ Arazisi Üretimi (2. Aşama: Arazi_* isimleri korunarak zenginleştirildi)
+# 2.5 Dağ Arazisi Üretimi (İlk bölümde Arazi_Yamac_01..04 aynen korunur,
+#     yeni bölümde Arazi_Yamac_05..08 + tüm dağ için Arazi_Dis_01..08)
 # ---------------------------------------------------------------------------
-def build_detailed_terrain(frames, tunnel_info, mats):
-    """
-    2. Aşama detaylı arazi:
-    - Arazi_Yamac_01..04: Yol kenarından (±8.25 m) ±46 m'ye uzanan, 8 yanal halkalı,
-      doğal kaya terasları, falez kademeleri ve zirveye yakın (y > 132 m) kar örtüsü içeren
-      yüksek detaylı yamaçlar.
-    - Arazi_TunelDagi_01..02: Tünellerin üstünü örten detaylı kaya ve karlı dağ sırtları.
-    - Arazi_Dis_01..04: 88x104 yüksek çözünürlüklü ızgara, ~200x200 m'lik 4 blok;
-      sıradağlar, vadiler ve kar çizgisi (y > 130 m Mat_Kar, alt irtifalar Mat_ToprakKar / Mat_Kaya).
-    Toplam üçgen ~38k (<= 250k sınırının çok altında).
-    """
+def build_detailed_terrain(frames, sampled_p1, tunnel_info, mats):
     n = len(frames) - 1
     xo = HALF_WIDTH + SHOULDER + BARRIER_THICK  # 8.25 m
 
-    cs_raw = [float(f["cliff_side"]) for f in frames]
-    cs_smooth = []
+    # İlk bölüm (0..936) için A1'deki cs_smooth değerlerini birebir koru (yerleşim yükseklikleri değişmesin)
+    cs_raw_p1 = [float(f["cliff_side"]) for f in sampled_p1]
+    cs_smooth_p1 = []
     win_cs = 10
-    for i in range(len(frames)):
+    for i in range(len(sampled_p1)):
         lo = max(0, i - win_cs)
-        hi = min(len(frames) - 1, i + win_cs)
-        cs_smooth.append(sum(cs_raw[lo:hi + 1]) / (hi - lo + 1))
+        hi = min(len(sampled_p1) - 1, i + win_cs)
+        cs_smooth_p1.append(sum(cs_raw_p1[lo:hi + 1]) / (hi - lo + 1))
 
-    num_chunks = 4
-    chunk_size = math.ceil(n / num_chunks)
+    cs_raw_all = [float(f["cliff_side"]) for f in frames]
+    cs_smooth_all = []
+    for i in range(len(frames)):
+        if i <= PRESERVED_P1_LAST_IDX:
+            cs_smooth_all.append(cs_smooth_p1[i])
+        else:
+            lo = max(0, i - win_cs)
+            hi = min(len(frames) - 1, i + win_cs)
+            cs_smooth_all.append(sum(cs_raw_all[lo:hi + 1]) / (hi - lo + 1))
+
     terrain_objs = []
-
-    # Yanal profil noktaları (8 nokta: yol kenarında sık, dışa doğru genişleyen)
     l_xs = [-44.0, -34.0, -25.5, -19.0, -14.2, -10.8, -9.2, -xo]
     r_xs = [xo, 9.2, 10.8, 14.2, 19.0, 25.5, 34.0, 44.0]
+    dists = [xo, 9.2, 10.8, 14.2, 19.0, 25.5, 34.0, 44.0]
 
-    # Tünel k0 ve k1 aralıkları (tünel içinde yamacın yola taşmaması için)
     tunnel_k_ranges = [(t["k0"], t["k1"]) for t in tunnel_info]
 
     def is_inside_tunnel_k(k_idx):
@@ -689,9 +892,11 @@ def build_detailed_terrain(frames, tunnel_info, mats):
                 return True
         return False
 
-    for c in range(num_chunks):
-        k0 = c * chunk_size
-        k1 = min(n, (c + 1) * chunk_size)
+    # A) İlk bölüm yamaçları: Arazi_Yamac_01..04 (k = 0..936, A1 ile birebir aynı formül)
+    p1_chunk_size = 250
+    for c in range(4):
+        k0 = c * p1_chunk_size
+        k1 = min(PRESERVED_P1_LAST_IDX, (c + 1) * p1_chunk_size)
         if k0 >= k1:
             continue
 
@@ -705,9 +910,9 @@ def build_detailed_terrain(frames, tunnel_info, mats):
         for k in range(k0, k1 + 1):
             f = frames[k]
             px, py, pz = f["x"], f["y"], f["z"]
-            rx, ry, rz = f["right_flat"]
+            rx, _, rz = f["right_flat"]
             s_val = f["s"]
-            cs = cs_smooth[k]
+            cs = cs_smooth_all[k]
 
             w1 = math.sin(s_val * 0.065 + 0.4)
             w2 = math.cos(s_val * 0.042 - 0.9)
@@ -715,23 +920,18 @@ def build_detailed_terrain(frames, tunnel_info, mats):
             l_ridge_t = 0.5 * (cs + 1.0)
             r_ridge_t = 0.5 * (1.0 - cs)
 
-            def calc_bank_profile(ridge_t, sign_side):
-                # Yol kenarında (xo=8.25m) -0.42m'den başlar; banket/ağaç kuşağı (9..20m) daha yumuşak eğimli
-                # ki ağaçlar ve kayalar yamaçta sağlam dursun; daha dışarıda dağ sırtı veya uçurum derinleşir.
+            def calc_bank_profile_p1(ridge_t, sign_side):
                 hs = []
-                dists = [xo, 9.2, 10.8, 14.2, 19.0, 25.5, 34.0, 44.0]
                 for idx_d, d in enumerate(dists):
                     if idx_d == 0:
                         hs.append(-0.42)
                         continue
                     u = (d - xo) / (44.0 - xo)
-                    # Dağ sırtı yüksekliği (iç yamaç) vs Uçurum şevi (dış yamaç)
                     crag = (1.4 * math.sin(s_val * 0.08 + d * 0.22 * sign_side)
                             + 0.8 * math.cos(s_val * 0.15 - d * 0.31))
                     h_ridge = (1.2 * (u ** 0.75) * 14.5) + abs(w1) * 1.8 * u + crag * u
                     h_cliff = (-1.1 * (u ** 1.15) * 18.5) - abs(w2) * 1.5 * u + crag * 0.6 * u
                     h_val = h_cliff * (1.0 - ridge_t) + h_ridge * ridge_t
-                    # En dış etek (d=44m) alt araziyle kesintisiz birleşmek için aşağı kıvrılır
                     if idx_d == len(dists) - 1:
                         h_val = min(h_val - 6.5, -14.5 + w1 * 0.8)
                     elif idx_d == len(dists) - 2:
@@ -739,16 +939,30 @@ def build_detailed_terrain(frames, tunnel_info, mats):
                     hs.append(h_val)
                 return hs
 
-            l_hs_from_road = calc_bank_profile(l_ridge_t, -1.0)
-            l_heights = list(reversed(l_hs_from_road))
-            r_heights = calc_bank_profile(r_ridge_t, +1.0)
+            l_heights = list(reversed(calc_bank_profile_p1(l_ridge_t, -1.0)))
+            r_heights = calc_bank_profile_p1(r_ridge_t, +1.0)
 
             l_ring = []
             for lx, lh in zip(l_xs, l_heights):
-                l_ring.append(t_mb.add_vert_u(px + rx * lx, py + lh, pz + rz * lx))
+                vx, vy, vz = px + rx * lx, py + lh, pz + rz * lx
+                if k > 890 and abs(lx) > xo + 0.5:
+                    for m in range(PRESERVED_P1_LAST_IDX + 5, min(n + 1, PRESERVED_P1_LAST_IDX + 110)):
+                        fm = frames[m]
+                        dm = math.hypot(vx - fm["x"], vz - fm["z"])
+                        if dm < 24.0:
+                            vy = min(vy, fm["y"] - 1.2 - max(0.0, (16.0 - dm) * 0.45))
+                l_ring.append(t_mb.add_vert_u(vx, vy, vz))
+
             r_ring = []
             for rx_off, rh in zip(r_xs, r_heights):
-                r_ring.append(t_mb.add_vert_u(px + rx * rx_off, py + rh, pz + rz * rx_off))
+                vx, vy, vz = px + rx * rx_off, py + rh, pz + rz * rx_off
+                if k > 890 and abs(rx_off) > xo + 0.5:
+                    for m in range(PRESERVED_P1_LAST_IDX + 5, min(n + 1, PRESERVED_P1_LAST_IDX + 110)):
+                        fm = frames[m]
+                        dm = math.hypot(vx - fm["x"], vz - fm["z"])
+                        if dm < 24.0:
+                            vy = min(vy, fm["y"] - 1.2 - max(0.0, (16.0 - dm) * 0.45))
+                r_ring.append(t_mb.add_vert_u(vx, vy, vz))
 
             left_rings.append(l_ring)
             right_rings.append(r_ring)
@@ -763,26 +977,150 @@ def build_detailed_terrain(frames, tunnel_info, mats):
             lr0, lr1 = left_rings[idx], left_rings[idx + 1]
             rr0, rr1 = right_rings[idx], right_rings[idx + 1]
             for j in range(n_lat):
-                # Dik falez yüzleri kaya (0), daha yatay teras/omuz şeritleri toprak veya kar (1)
                 is_terrace_L = j in (0, 1, 4, 5)
                 is_terrace_R = j in (1, 2, 5, 6)
                 if c >= 2:
-                    # Kar çizgisi: 128 m üstünde teraslar karlı
                     m_L = 1 if (py_cur > 126.0 and is_terrace_L) else 0
                     m_R = 1 if (py_cur > 126.0 and is_terrace_R) else 0
                 else:
-                    # Alt irtifada teraslar orman toprağı, dik şevler kaya
                     m_L = 1 if is_terrace_L else 0
                     m_R = 1 if is_terrace_R else 0
-
                 t_mb.add_quad(lr0[j], lr0[j + 1], lr1[j + 1], lr1[j], mat_idx=m_L)
                 t_mb.add_quad(rr0[j], rr0[j + 1], rr1[j + 1], rr1[j], mat_idx=m_R)
 
         t_mb.extrude_profile(frames, [(xo, -BARRIER_DEPTH), (-xo, -BARRIER_DEPTH)], k0, k1)
         terrain_objs.append(t_mb.build())
 
-    # 2) Tünellerin üstündeki dağ sırtı kütlesi (Arazi_TunelDagi_01, Arazi_TunelDagi_02)
-    # outer_arch_l2r ile birebir örtüşen iç taban + dağ üstü dış kabuk + giriş/çıkış alın duvarları (tam kapalı hacim!)
+    # B) Yeni uzatma bölümü yamaçları: Arazi_Yamac_05..08 (k = 936..n)
+    # Üst üste dizilmiş 7 firkete boyunca yolu dağ yamacına oturtur, alttaki yolun yukarıdan görünmesini sağlar
+    ext_steps = n - PRESERVED_P1_LAST_IDX
+    ext_chunks = 4
+    ext_chunk_size = math.ceil(ext_steps / ext_chunks)
+    road_sub_ext = frames[max(0, PRESERVED_P1_LAST_IDX - 40)::2]
+
+    # Viraj içlerinde (eğrilik merkezinde) yanal profillerin kendi üstüne katlanmasını (bowtie/diken)
+    # önlemek için yumuşatılmış eğrilik (curvature) dizisi:
+    k_raw_all = [float(f["k"]) for f in frames]
+    k_smooth_all = []
+    win_k = 12
+    for i in range(len(frames)):
+        lo = max(0, i - win_k)
+        hi = min(len(frames) - 1, i + win_k)
+        # Yakın çevredeki en keskin eğriliği dikkate al ki firkete giriş/çıkışında da iç uzanım daralsın
+        local_ks = k_raw_all[lo:hi + 1]
+        avg_k = sum(local_ks) / len(local_ks)
+        max_k = max(local_ks, key=lambda v: abs(v))
+        k_smooth_all.append(0.4 * avg_k + 0.6 * max_k)
+
+    for c in range(ext_chunks):
+        k0 = PRESERVED_P1_LAST_IDX + c * ext_chunk_size
+        k1 = min(n, PRESERVED_P1_LAST_IDX + (c + 1) * ext_chunk_size)
+        if k0 >= k1:
+            continue
+
+        t_mb = MapMeshBuilder(f"Arazi_Yamac_{c + 5:02d}", [mats["Mat_Kaya"], mats["Mat_Kar"]])
+        left_rings = []
+        right_rings = []
+
+        for k in range(k0, k1 + 1):
+            f = frames[k]
+            px, py, pz = f["x"], f["y"], f["z"]
+            rx, _, rz = f["right_flat"]
+            s_val = f["s"]
+            cs = cs_smooth_all[k]
+            k_curv = k_smooth_all[k]
+
+            w1 = math.sin(s_val * 0.065 + 0.4)
+            w2 = math.cos(s_val * 0.042 - 0.9)
+
+            l_ridge_t = 0.5 * (cs + 1.0)
+            r_ridge_t = 0.5 * (1.0 - cs)
+
+            # İç viraj tarafında maksimum yanal uzanımı eğrilik yarıçapının %42'si ile sınırla
+            # (böylece firkete göbeğinde iç halkalar asla çakışmaz, pürüzsüz iç yamaç oluşur)
+            max_reach_L = 44.0
+            max_reach_R = 44.0
+            if k_curv < -1e-4:  # Sola dönüş -> sol taraf iç viraj
+                r_curv = 1.0 / abs(k_curv)
+                max_reach_L = max(xo + 4.2, min(44.0, r_curv * 0.42))
+            elif k_curv > 1e-4:  # Sağa dönüş -> sağ taraf iç viraj
+                r_curv = 1.0 / abs(k_curv)
+                max_reach_R = max(xo + 4.2, min(44.0, r_curv * 0.42))
+
+            def calc_bank_profile_ext(ridge_t, sign_side, max_reach):
+                hs = []
+                eff_dists = []
+                scale_span = (max_reach - xo) / (44.0 - xo)
+                for idx_d, d in enumerate(dists):
+                    d_eff = xo + (d - xo) * scale_span
+                    eff_dists.append(d_eff)
+                    if idx_d == 0:
+                        hs.append(-0.42)
+                        continue
+                    u = (d - xo) / (44.0 - xo)
+                    crag = (0.65 * math.sin(s_val * 0.07 + d * 0.18 * sign_side)
+                            + 0.35 * math.cos(s_val * 0.13 - d * 0.25)) * scale_span
+                    # Üst üste firketelerde iç yamaç yumuşakça yükselir, dış yamaç (uçurum) alt katmana iner
+                    h_ridge = (1.0 * (u ** 0.75) * 7.5 * scale_span) + abs(w1) * 0.7 * u * scale_span + crag * 0.5 * u
+                    h_cliff = (-1.15 * (u ** 1.08) * 19.5) - abs(w2) * 1.1 * u + crag * 0.4 * u
+                    h_val = h_cliff * (1.0 - ridge_t) + h_ridge * ridge_t
+                    if idx_d == len(dists) - 1:
+                        h_val = min(h_val - 9.0, -21.0 + w1 * 0.5)
+                    elif idx_d == len(dists) - 2:
+                        h_val = min(h_val, 3.5 * ridge_t * scale_span - 13.5 * (1.0 - ridge_t))
+                    hs.append(h_val)
+                return eff_dists, hs
+
+            l_eff_dists, l_hs_from_road = calc_bank_profile_ext(l_ridge_t, -1.0, max_reach_L)
+            l_xs_eff = [-d for d in reversed(l_eff_dists)]
+            l_heights = list(reversed(l_hs_from_road))
+            r_xs_eff, r_heights = calc_bank_profile_ext(r_ridge_t, +1.0, max_reach_R)
+
+            def clamp_against_other_tiers(vx, vy, vz, cur_s, lat_abs):
+                if lat_abs <= xo + 0.5:
+                    return vy
+                for fm in road_sub_ext:
+                    if abs(fm["s"] - cur_s) < 35.0:
+                        continue
+                    dm = math.hypot(vx - fm["x"], vz - fm["z"])
+                    if dm < 30.0:
+                        safe_ceil = fm["y"] - 1.25 - max(0.0, (18.0 - dm) * 0.45)
+                        if vy > safe_ceil:
+                            vy = safe_ceil
+                return vy
+
+            l_ring = []
+            for lx, lh in zip(l_xs_eff, l_heights):
+                vx, vy, vz = px + rx * lx, py + lh, pz + rz * lx
+                vy = clamp_against_other_tiers(vx, vy, vz, s_val, abs(lx))
+                l_ring.append(t_mb.add_vert_u(vx, vy, vz))
+
+            r_ring = []
+            for rx_off, rh in zip(r_xs_eff, r_heights):
+                vx, vy, vz = px + rx * rx_off, py + rh, pz + rz * rx_off
+                vy = clamp_against_other_tiers(vx, vy, vz, s_val, abs(rx_off))
+                r_ring.append(t_mb.add_vert_u(vx, vy, vz))
+
+            left_rings.append(l_ring)
+            right_rings.append(r_ring)
+
+        n_lat = len(l_xs) - 1
+        for idx in range(len(left_rings) - 1):
+            lr0, lr1 = left_rings[idx], left_rings[idx + 1]
+            rr0, rr1 = right_rings[idx], right_rings[idx + 1]
+            for j in range(n_lat):
+                # Yol omuzu ve üst teraslar karlı (1), dış dik falez etekleri kaya (0)
+                is_snow_L = j >= 3 if c >= 1 else j in (4, 5, 6)
+                is_snow_R = j <= 3 if c >= 1 else j in (0, 1, 2)
+                m_L = 1 if is_snow_L else 0
+                m_R = 1 if is_snow_R else 0
+                t_mb.add_quad(lr0[j], lr0[j + 1], lr1[j + 1], lr1[j], mat_idx=m_L)
+                t_mb.add_quad(rr0[j], rr0[j + 1], rr1[j + 1], rr1[j], mat_idx=m_R)
+
+        t_mb.extrude_profile(frames, [(xo, -BARRIER_DEPTH), (-xo, -BARRIER_DEPTH)], k0, k1)
+        terrain_objs.append(t_mb.build())
+
+    # C) Tünellerin üstündeki dağ sırtı kütlesi (Arazi_TunelDagi_01, Arazi_TunelDagi_02 — A1 ile birebir aynı)
     for idx_t, tinfo in enumerate(tunnel_info):
         k0, k1 = tinfo["k0"], tinfo["k1"]
         second_mat = mats["Mat_Kar"] if idx_t == 1 else mats["Mat_ToprakKar"]
@@ -790,9 +1128,7 @@ def build_detailed_terrain(frames, tunnel_info, mats):
 
         xs_cap = [-28.0, -18.5, -10.8, -8.4, -4.8, 0.0, 4.8, 8.4, 10.8, 18.5, 28.0]
         base_hs = [-5.0,  11.5,  17.5, 21.5, 24.8, 26.5, 24.8, 21.5, 17.5, 11.5, -5.0]
-        # Tünel dış kemerinin (outer_arch_l2r) üst konturuyla ve yanlarda bariyer tabanıyla tam örtüşen alt sınır:
         portal_hs = [-4.5, -1.5,  6.70, 9.55, 11.05, 11.55, 11.05, 9.55, 6.70, -1.5, -4.5]
-        # Portal alın duvarının üst konturu (yanlarda yamaçla birleşir, ortada tünel kemerini +4m kaya alınlığıyla taçlandırır):
         portal_top_hs = [-4.5, 4.2, 9.8, 13.0, 14.8, 15.5, 14.8, 13.0, 9.8, 4.2, -4.5]
 
         top_rings = []
@@ -823,14 +1159,12 @@ def build_detailed_terrain(frames, tunnel_info, mats):
             top_rings.append(t_ring)
             bot_rings.append(b_ring)
 
-        # Üst dağ yüzeyi (yukarı bakan normaller)
         for step_i in range(len(top_rings) - 1):
             r0, r1 = top_rings[step_i], top_rings[step_i + 1]
             for j in range(len(xs_cap) - 1):
                 m_idx = 1 if (3 <= j <= 6) else 0
                 td_mb.add_quad(r0[j], r0[j + 1], r1[j + 1], r1[j], mat_idx=m_idx)
 
-        # Giriş (step 0) ve çıkış (step -1) dikey kaya alın yüzeyleri (yalnız tünel kemeri ve yakın omuzlarda: j = 1..8)
         for end_idx in (0, -1):
             tr = top_rings[end_idx]
             br = bot_rings[end_idx]
@@ -842,7 +1176,6 @@ def build_detailed_terrain(frames, tunnel_info, mats):
                 td_mb.add_quad(br[j], br[j + 1], tr[j + 1], tr[j], mat_idx=0)
                 td_mb.add_quad(br[j + 1], br[j], tr[j], tr[j + 1], mat_idx=0)
 
-            # Tünel kemerinin iki yanındaki (x = ±8.20..±18.5) alt üçgen/yamuk boşluğu zemin altına (-2.0m) kadar kaya duvarla kapat
             for side_sign, j_outer, j_far in [(-1.0, 2, 1), (+1.0, 8, 9)]:
                 v_in_bot = td_mb.add_vert_u(px + rx * (side_sign * 8.20) - ux * 2.00, py + ry * (side_sign * 8.20) - uy * 2.00, pz + rz * (side_sign * 8.20) - uz * 2.00)
                 v_out_bot = td_mb.add_vert_u(px + rx * (side_sign * 18.50) - ux * 2.00, py + ry * (side_sign * 18.50) - uy * 2.00, pz + rz * (side_sign * 18.50) - uz * 2.00)
@@ -856,14 +1189,14 @@ def build_detailed_terrain(frames, tunnel_info, mats):
 
         terrain_objs.append(td_mb.build())
 
-    # 3) Çevreleyen geniş dağ arazisi (2x2 = 4 blok: Arazi_Dis_01..04)
+    # D) Çevreleyen geniş dağ arazisi (2x4 = 8 blok: Arazi_Dis_01..08)
     xs_all = [f["x"] for f in frames]
     zs_all = [f["z"] for f in frames]
     margin = 165.0
     x_min, x_max = min(xs_all) - margin, max(xs_all) + margin
     z_min, z_max = min(zs_all) - margin, max(zs_all) + margin
 
-    nx_total, nz_total = 76, 88
+    nx_total, nz_total = 80, 128
     dx = (x_max - x_min) / nx_total
     dz = (z_max - z_min) / nz_total
 
@@ -874,50 +1207,57 @@ def build_detailed_terrain(frames, tunnel_info, mats):
         gz = z_min + iz * dz
         for ix in range(nx_total + 1):
             gx = x_min + ix * dx
-            min_d2 = 1e18
-            near_y = 0.0
             w_sum = 0.0
             wy_sum = 0.0
+            nearby_road_ceilings = []
+            min_d2 = 1e18
+            near_y = 0.0
             for f in sampled_sub:
                 d2 = (gx - f["x"]) ** 2 + (gz - f["z"]) ** 2
                 if d2 < min_d2:
                     min_d2 = d2
                     near_y = f["y"]
-                w = 1.0 / ((d2 + 90.0 ** 2) ** 2)
+                w = 1.0 / ((d2 + 85.0 ** 2) ** 2)
                 w_sum += w
                 wy_sum += w * f["y"]
-            dist = math.sqrt(min_d2)
+                if d2 < 95.0 ** 2:
+                    nearby_road_ceilings.append((math.sqrt(d2), f["y"]))
+
             smooth_base_y = wy_sum / w_sum if w_sum > 0 else near_y
 
-            ridge = (13.0 * math.sin(gx * 0.011 + 0.7) * math.cos(gz * 0.009 - 0.3)
-                     + 5.5 * math.sin(gx * 0.027 - 1.2) * math.cos(gz * 0.024 + 0.8))
-            peaks = 28.0 * max(0.0, math.sin(gx * 0.0065 - 1.1) * math.sin(gz * 0.0065 + 0.4))
-            natural_h = smooth_base_y - 13.5 + ridge + peaks
+            ridge = (11.0 * math.sin(gx * 0.011 + 0.7) * math.cos(gz * 0.009 - 0.3)
+                     + 4.5 * math.sin(gx * 0.027 - 1.2) * math.cos(gz * 0.024 + 0.8))
+            peaks = 24.0 * max(0.0, math.sin(gx * 0.0065 - 1.1) * math.sin(gz * 0.0065 + 0.4))
+            natural_h = smooth_base_y - 6.5 + ridge + peaks
 
-            if dist < 40.0:
-                safe_h = near_y - 9.2 - (40.0 - dist) * 0.16
-                h = min(natural_h, safe_h)
-            else:
-                t_blend = min(1.0, (dist - 40.0) / 55.0)
-                safe_h = near_y - 9.2
-                h = min(natural_h, safe_h * (1.0 - t_blend) + natural_h * t_blend)
+            h = natural_h
+            for dist_f, fy_val in nearby_road_ceilings:
+                if dist_f < 13.0:
+                    safe_h = fy_val - 2.8 - (13.0 - dist_f) * 0.25
+                    h = min(h, safe_h)
+                elif dist_f < 42.0:
+                    safe_h = fy_val - 2.8 - (dist_f - 13.0) * 0.20
+                    h = min(h, safe_h)
+                else:
+                    t_blend = min(1.0, (dist_f - 42.0) / 53.0)
+                    safe_h = fy_val - 8.6
+                    h = min(h, safe_h * (1.0 - t_blend) + natural_h * t_blend)
 
             grid_y[iz][ix] = h
 
-    half_x = nx_total // 2
-    half_z = nz_total // 2
-    chunk_Idx = 1
-    for cz in range(2):
-        z0_i = cz * half_z
-        z1_i = nz_total if cz == 1 else half_z
+    step_x = nx_total // 2
+    step_z = nz_total // 4
+    chunk_idx = 1
+    for cz in range(4):
+        z0_i = cz * step_z
+        z1_i = nz_total if cz == 3 else (cz + 1) * step_z
         for cx in range(2):
-            x0_i = cx * half_x
-            x1_i = nx_total if cx == 1 else half_x
-            # Yüksek irtifa bloklarında kar + kaya, alçak bloklarda orman toprağı + kaya
-            has_high_snow = (cz == 1)
+            x0_i = cx * step_x
+            x1_i = nx_total if cx == 1 else (cx + 1) * step_x
+            has_high_snow = (cz >= 1)
             first_mat = mats["Mat_Kar"] if has_high_snow else mats["Mat_ToprakKar"]
-            g_mb = MapMeshBuilder(f"Arazi_Dis_{chunk_Idx:02d}", [first_mat, mats["Mat_Kaya"]])
-            chunk_Idx += 1
+            g_mb = MapMeshBuilder(f"Arazi_Dis_{chunk_idx:02d}", [first_mat, mats["Mat_Kaya"]])
+            chunk_idx += 1
 
             vid = {}
             for iz in range(z0_i, z1_i + 1):
@@ -936,7 +1276,7 @@ def build_detailed_terrain(frames, tunnel_info, mats):
                     gy_avg = 0.25 * (grid_y[iz][ix] + grid_y[iz][ix + 1] + grid_y[iz + 1][ix] + grid_y[iz + 1][ix + 1])
                     slope = abs(grid_y[iz + 1][ix] - grid_y[iz][ix]) + abs(grid_y[iz][ix + 1] - grid_y[iz][ix])
                     if has_high_snow:
-                        m_idx = 0 if (gy_avg > 125.0 and slope < 4.2) else 1
+                        m_idx = 0 if (gy_avg > 125.0 and slope < 4.5) else 1
                     else:
                         m_idx = 1 if (gy_avg > 95.0 or slope > 3.8) else 0
                     g_mb.add_quad(v00, v10, v11, v01, mat_idx=m_idx)
@@ -947,67 +1287,32 @@ def build_detailed_terrain(frames, tunnel_info, mats):
 
 
 # ---------------------------------------------------------------------------
-# 3. Çevre Yerleşimi Üretimi (Dag_Yerlesim.json)
+# 3. Mevcut Çevre Yerleşimini Koruma ve Çakışanları Temizleme (Dag_Yerlesim.json)
 # ---------------------------------------------------------------------------
-def generate_placements(frames, seg_meta, tunnel_info):
+def update_placements_for_phase1_extension(frames_all, sampled_p1, seg_meta_p1, tunnel_info):
     """
-    BVHTree ışın izleme (raycast) ile her ağacı, çimeni, kayayı ve tabelayı
-    tam olarak arazi yüzeyinin üstüne oturtur ve tüm güvenlik kurallarını doğrular:
-    - Yola ve bariyere >= 3 m uzak (bariyer dış yüzü 8.25 m -> ağaçlar en az 11.8 m uzakta).
-    - Tünel içlerinde ve tünel ağızlarının 18 m önünde/arkasında ağaç/kaya/çimen yok.
-    - Hiçbir yerleşim öğesi yolun herhangi bir noktasına (firketelerde komşu kol dahil)
-      3B/yatay olarak izin verilen güvenlik mesafesinden daha yakın olamaz.
+    A2 1. Aşama Kuralı:
+    - İlk bölümdeki mevcut çevre yerleşimi (Dag_Yerlesim.json) aynen kalır.
+    - Yeni yolun (936..son) üstünden geçtiği veya bariyerine 3.5 m'den fazla yaklaştığı
+      (merkezden < 12.5 m) mevcut ağaçlar/öğeler ve kaldırılan eski bitiş düzlüğündeki
+      (indeks > 936) havada kalacak öğeler yerleşimden çıkarılır.
+    - Bu aşamada yeni bölüme çevre detayı eklenmez.
     """
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    terrain_trees = []
-    for o in bpy.data.objects:
-        if o.type == 'MESH' and o.name.startswith("Arazi_"):
-            terrain_trees.append((o.name, BVHTree.FromObject(o, depsgraph)))
+    existing_path = "/home/zoro/harvester/Harvester/Assets/Maps/DagTirmanisi/Dag_Yerlesim.json"
+    if not os.path.exists(existing_path):
+        existing_path = os.path.join(SCRIPT_DIR, "Dag_Yerlesim.json")
 
-    down_bl = Vector((0.0, 0.0, -1.0))  # Blender -Z = Unity -Y (aşağı)
+    raw_items = []
+    if os.path.exists(existing_path):
+        with open(existing_path, "r", encoding="utf-8") as fp:
+            raw_items = json.load(fp)
 
-    def sample_ground_y(ux, uy_ref, uz):
-        """(ux, uz) noktasında yol irtifasına yakın arazi yüzey yüksekliğini (uy) bulur."""
-        orig_bl = Vector(u2b(ux, uy_ref + 35.0, uz))
-        best_y = None
-        best_diff = 1e9
-        for _, tree in terrain_trees:
-            loc, norm, idx, dist = tree.ray_cast(orig_bl, down_bl, 85.0)
-            if loc is not None:
-                # Yüzey çok dik uçurum duvarıysa (normal.z < 0.35) oraya ağaç dikme
-                hit_y = float(loc.z)
-                normal_up = float(norm.z)
-                diff = abs(hit_y - uy_ref)
-                if diff < best_diff:
-                    best_diff = diff
-                    best_y = (hit_y, normal_up)
-        return best_y
+    new_road_pts = [(f["x"], f["y"], f["z"]) for f in frames_all[PRESERVED_P1_LAST_IDX:]]
+    old_road_pts = [(f["x"], f["y"], f["z"]) for f in sampled_p1]
 
-    # Tünel aralıkları (s cinsinden)
-    tunnel_ranges = [(t["start_m"], t["end_m"]) for t in tunnel_info]
-
-    def in_tunnel_zone(s_val, margin=18.0):
-        for ts, te in tunnel_ranges:
-            if (ts - margin) <= s_val <= (te + margin):
-                return True
-        return False
-
-    # Firketelerde üst/alt kolların birbirine yaklaştığı yerlerde yola çarpmayı önlemek için
-    # hızlı 2B/3B en yakın yol merkezi mesafesi kontrolü:
-    road_pts = [(f["x"], f["y"], f["z"], f["s"]) for f in frames]
-
-    def min_clearance_to_any_road(ux, uy, uz, min_horiz_dist):
-        """Noktanın tüm yol orta çizgisi örneklerine yatay uzaklığının >= min_horiz_dist olduğunu doğrular."""
-        min_d2 = min_horiz_dist * min_horiz_dist
-        for rx, ry, rz, _ in road_pts:
-            if abs(uy - ry) < 28.0:  # Aynı katmandaki yol kolu
-                d2 = (ux - rx) ** 2 + (uz - rz) ** 2
-                if d2 < min_d2:
-                    return False
-        return True
-
-    rng = random.Random(20261114)
-    placements = []
+    filtered = []
+    removed_on_new_road = 0
+    removed_old_finish = 0
     counts = {
         "Agac_Cam_01": 0,
         "Agac_Ladin_01": 0,
@@ -1019,251 +1324,57 @@ def generate_placements(frames, seg_meta, tunnel_info):
         "Tabela_KayaDusebilir": 0,
     }
 
-    # -----------------------------------------------------------------------
-    # A) Tabelalar (Tabela_KeskinViraj ve Tabela_KayaDusebilir)
-    # Bariyerin hemen dışına (yanal 8.95 m), viraj dışına ve tünel/uçurum girişlerine
-    # -----------------------------------------------------------------------
-    for h_seg in seg_meta:
-        if "Firkete" in h_seg["name"]:
-            # Firkete boyunca dış kenara 5 adet keskin viraj şevron tabelası diz
-            s0, s1 = h_seg["start_m"] + 8.0, h_seg["end_m"] - 8.0
-            turn_sign = 1.0 if h_seg["turn_deg"] > 0 else -1.0
-            # Sağa dönüşte (turn_deg > 0) dış kenar SOL (-1), sola dönüşte dış kenar SAĞ (+1)
-            outer_side = -1.0 if turn_sign > 0 else +1.0
-            for step_i in range(6):
-                s_target = s0 + (s1 - s0) * (step_i / 5.0)
-                k = min(len(frames) - 1, max(0, int(round(s_target / SAMPLE_STEP))))
-                f = frames[k]
-                lat = outer_side * 9.05  # Bariyer dış yüzü 8.25m + 0.80m
-                px = f["x"] + f["right_flat"][0] * lat
-                pz = f["z"] + f["right_flat"][2] * lat
-                py = f["y"] - 0.15
-                # Tabelanın +Z ön yüzü gelen sürücüye baksın (-fwd yönüne doğru)
-                fx, _, fz = f["fwd"]
-                yaw_deg = math.degrees(math.atan2(-fx, -fz)) + outer_side * 18.0
-                placements.append({
-                    "model": "Tabela_KeskinViraj",
-                    "p": [round(px, 2), round(py, 2), round(pz, 2)],
-                    "r": round(yaw_deg % 360.0, 1),
-                    "s": 1.0,
-                })
-                counts["Tabela_KeskinViraj"] += 1
-
-    # Tünel ve uçurum yaklaşımlarına Tabela_KayaDusebilir yerleştir
-    hazard_s_list = [185.0, 415.0, 665.0, 692.0, 845.0, 1085.0, 1355.0, 1665.0, 1692.0, 1925.0, 2140.0, 2280.0]
-    for idx_h, s_target in enumerate(hazard_s_list):
-        k = min(len(frames) - 1, max(0, int(round(s_target / SAMPLE_STEP))))
-        f = frames[k]
-        for side in (-1.0, 1.0):
-            if idx_h % 2 == 0 and side < 0:
-                continue
-            lat = side * 9.00
-            px = f["x"] + f["right_flat"][0] * lat
-            pz = f["z"] + f["right_flat"][2] * lat
-            py = f["y"] - 0.15
-            fx, _, fz = f["fwd"]
-            yaw_deg = math.degrees(math.atan2(-fx, -fz))
-            placements.append({
-                "model": "Tabela_KayaDusebilir",
-                "p": [round(px, 2), round(py, 2), round(pz, 2)],
-                "r": round(yaw_deg % 360.0, 1),
-                "s": 1.0,
-            })
-            counts["Tabela_KayaDusebilir"] += 1
-
-    # -----------------------------------------------------------------------
-    # B) Ağaçlar (Agac_Cam_01, Agac_Ladin_01, Agac_KarliCam_01) — Hedef ~2.600 ağaç (<= 4.000)
-    # Gece + sis: Yola yakın kuşağa (12.0 m .. 38.0 m) yoğun yatırım yapıyoruz!
-    # Bariyer dış yüzü = 8.25 m. En küçük ağaç merkez uzaklığı = 12.2 m (bariyere >= 3.95 m, yola >= 5.2 m).
-    # -----------------------------------------------------------------------
-    tree_bands = [
-        # (min_lat, max_lat, step_k, prob)
-        (12.2, 16.5, 1, 0.88),  # 1. Kuşak: Yol kenarı sık orman duvarı (far ışığında en çok görünen)
-        (16.8, 23.5, 1, 0.82),  # 2. Kuşak: Orta yamaç ormanı
-        (24.0, 32.5, 2, 0.72),  # 3. Kuşak: Üst yamaç silüeti
-        (33.0, 41.5, 3, 0.55),  # 4. Kuşak: Sis sınırı arka plan ağaçları
-    ]
-
-    for k in range(2, len(frames) - 2):
-        f = frames[k]
-        s_val = f["s"]
-        if in_tunnel_zone(s_val, margin=16.0):
+    for item in raw_items:
+        px, py, pz = item["p"]
+        # 1) Yeni yolun (936..son) sürüş ve bariyer koridoruna (< 12.5 m) girenleri çıkar
+        min_d2_new = min((px - rx) ** 2 + (pz - rz) ** 2 for rx, ry, rz in new_road_pts)
+        if min_d2_new < (12.5 ** 2):
+            removed_on_new_road += 1
             continue
 
-        px, py, pz = f["x"], f["y"], f["z"]
-        rx, _, rz = f["right_flat"]
-        fx, _, fz = f["fwd"]
-
-        for b_idx, (lat_lo, lat_hi, step_k, prob) in enumerate(tree_bands):
-            if k % step_k != 0:
-                continue
-            for side in (-1.0, 1.0):
-                # Uçurumun en dış şevinde çok uzaktaki ağaçları seyrelt ki görüş ve uçurum hissi korunsun
-                if f["cliff_side"] == side and b_idx >= 2 and rng.random() < 0.55:
-                    continue
-                if rng.random() > prob:
-                    continue
-
-                lat_dist = rng.uniform(lat_lo, lat_hi)
-                jitter_s = rng.uniform(-1.1, 1.1)
-                tx = px + rx * (side * lat_dist) + fx * jitter_s
-                tz = pz + rz * (side * lat_dist) + fz * jitter_s
-
-                # Herhangi bir yol koluna yatayda en az 11.8 m (yol kenarı 7m + 4.8m > 3m) uzak olmalı
-                if not min_clearance_to_any_road(tx, py, tz, 11.8):
-                    continue
-
-                hit = sample_ground_y(tx, py, tz)
-                if hit is None:
-                    continue
-                ty, norm_up = hit
-                if norm_up < 0.38 or abs(ty - py) > 19.0:
-                    continue
-
-                # İrtifaya göre ağaç türü seçimi (kar çizgisi geçişi ~120 m .. 145 m)
-                if ty > 142.0:
-                    t_model = "Agac_KarliCam_01" if rng.random() < 0.82 else "Agac_Ladin_01"
-                elif ty > 112.0:
-                    r_choice = rng.random()
-                    if r_choice < 0.45:
-                        t_model = "Agac_KarliCam_01"
-                    elif r_choice < 0.78:
-                        t_model = "Agac_Ladin_01"
-                    else:
-                        t_model = "Agac_Cam_01"
-                else:
-                    t_model = "Agac_Cam_01" if rng.random() < 0.56 else "Agac_Ladin_01"
-
-                scale = round(rng.uniform(0.82, 1.32), 2)
-                rot_y = round(rng.uniform(0.0, 360.0), 1)
-
-                placements.append({
-                    "model": t_model,
-                    "p": [round(tx, 2), round(ty, 2), round(tz, 2)],
-                    "r": rot_y,
-                    "s": scale,
-                })
-                counts[t_model] += 1
-
-    # -----------------------------------------------------------------------
-    # C) Kayalar (Kaya_Buyuk_01 ve Kaya_Orta_01)
-    # Yamaç eteklerinde, tünel giriş yanlarında, uçurum kenarlarında ve zirvede
-    # -----------------------------------------------------------------------
-    for k in range(3, len(frames) - 3, 2):
-        f = frames[k]
-        s_val = f["s"]
-        if in_tunnel_zone(s_val, margin=8.0):
+        # 2) Kaldırılan eski bitiş düzlüğüne (indeks > 936) ait olanları çıkar
+        best_old_idx = min(
+            range(len(old_road_pts)),
+            key=lambda i: (px - old_road_pts[i][0]) ** 2 + (pz - old_road_pts[i][2]) ** 2,
+        )
+        if best_old_idx > PRESERVED_P1_LAST_IDX:
+            removed_old_finish += 1
             continue
 
-        px, py, pz = f["x"], f["y"], f["z"]
-        rx, _, rz = f["right_flat"]
-        fx, _, fz = f["fwd"]
+        filtered.append(item)
+        m_name = item["model"]
+        if m_name in counts:
+            counts[m_name] += 1
 
-        for side in (-1.0, 1.0):
-            if rng.random() > 0.42:
-                continue
-            is_big = rng.random() < 0.38
-            r_model = "Kaya_Buyuk_01" if is_big else "Kaya_Orta_01"
-            lat_dist = rng.uniform(11.8, 26.0) if is_big else rng.uniform(10.2, 20.0)
-            jitter_s = rng.uniform(-1.0, 1.0)
-            kx = px + rx * (side * lat_dist) + fx * jitter_s
-            kz = pz + rz * (side * lat_dist) + fz * jitter_s
-
-            min_r_dist = 11.2 if is_big else 9.8
-            if not min_clearance_to_any_road(kx, py, kz, min_r_dist):
-                continue
-
-            hit = sample_ground_y(kx, py, kz)
-            if hit is None:
-                continue
-            ky, _ = hit
-            if abs(ky - py) > 18.0:
-                continue
-
-            scale = round(rng.uniform(0.78, 1.38), 2)
-            rot_y = round(rng.uniform(0.0, 360.0), 1)
-            placements.append({
-                "model": r_model,
-                "p": [round(kx, 2), round(ky, 2), round(kz, 2)],
-                "r": rot_y,
-                "s": scale,
-            })
-            counts[r_model] += 1
-
-    # -----------------------------------------------------------------------
-    # D) Çimen Öbekleri (Cimen_Obek_01) — Hedef ~3.600 öbek (<= 6.000)
-    # Yola yakın şeritlerde (9.2 m .. 22.0 m) sık, zirvede kar çizgisinin üstünde seyrek
-    # -----------------------------------------------------------------------
-    grass_bands = [
-        (9.3,  12.2, 0.92),
-        (12.3, 16.5, 0.85),
-        (16.6, 22.5, 0.65),
-    ]
-    for k in range(1, len(frames) - 1):
-        f = frames[k]
-        s_val = f["s"]
-        if in_tunnel_zone(s_val, margin=10.0):
-            continue
-
-        px, py, pz = f["x"], f["y"], f["z"]
-        # Kar çizgisinin üstünde (y > 160m) çimen azalır
-        snow_grass_factor = 1.0 if py < 130.0 else max(0.18, 1.0 - (py - 130.0) / 75.0)
-
-        rx, _, rz = f["right_flat"]
-        fx, _, fz = f["fwd"]
-
-        for lat_lo, lat_hi, base_prob in grass_bands:
-            for side in (-1.0, 1.0):
-                if rng.random() > (base_prob * snow_grass_factor):
-                    continue
-                if counts["Cimen_Obek_01"] >= 5400:
-                    break
-
-                lat_dist = rng.uniform(lat_lo, lat_hi)
-                jitter_s = rng.uniform(-1.2, 1.2)
-                gx = px + rx * (side * lat_dist) + fx * jitter_s
-                gz = pz + rz * (side * lat_dist) + fz * jitter_s
-
-                if not min_clearance_to_any_road(gx, py, gz, 9.1):
-                    continue
-
-                hit = sample_ground_y(gx, py, gz)
-                if hit is None:
-                    continue
-                gy, norm_up = hit
-                if norm_up < 0.42 or abs(gy - py) > 14.0:
-                    continue
-
-                scale = round(rng.uniform(0.75, 1.35), 2)
-                rot_y = round(rng.uniform(0.0, 360.0), 1)
-                placements.append({
-                    "model": "Cimen_Obek_01",
-                    "p": [round(gx, 2), round(gy, 2), round(gz, 2)],
-                    "r": rot_y,
-                    "s": scale,
-                })
-                counts["Cimen_Obek_01"] += 1
-
-    total_trees = counts["Agac_Cam_01"] + counts["Agac_Ladin_01"] + counts["Agac_KarliCam_01"]
-    total_grass = counts["Cimen_Obek_01"]
-    assert total_trees <= 4000, f"Ağaç sayısı 4.000 sınırını aştı: {total_trees}"
-    assert total_grass <= 6000, f"Çimen öbeği sayısı 6.000 sınırını aştı: {total_grass}"
-
-    print(f"[Yerleşim] Toplam {len(placements)} öğe üretildi (Ağaç: {total_trees}, Çimen: {total_grass}):")
-    print(json.dumps(counts, indent=2, ensure_ascii=False))
-    return placements, counts
+    print(
+        f"[Yerleşim] İlk bölüm korundu: {len(filtered)} öğe kaldı "
+        f"(yeni yol üstünden çıkarılan: {removed_on_new_road}, eski bitiş düzlüğünden çıkarılan: {removed_old_finish})"
+    )
+    return filtered, counts, removed_on_new_road, removed_old_finish
 
 
 # ---------------------------------------------------------------------------
-# 4. Geometri, 3B Açıklık (Clearance) ve Kural Doğrulama
+# 4. Geometri, Yarıçap, Eğim, Kesişmeme ve Açıklık Doğrulama
 # ---------------------------------------------------------------------------
-def verify_track(frames, seg_meta, tunnel_info, placement_counts):
+def verify_track(frames, sampled_p1, seg_meta, tunnel_info, placement_counts, removed_new_road, removed_old_finish):
     total_len = frames[-1]["s"]
     max_step = 0.0
     max_grade = 0.0
     max_grade_s = 0.0
+    ext_max_grade = 0.0
+    ext_max_grade_s = 0.0
     max_bank = max(abs(f["bank_deg"]) for f in frames)
 
+    # 1) İlk 937 noktanın (0..936, ~2.340 m) birebir korunduğunu doğrula
+    max_p1_diff = 0.0
+    for i in range(PRESERVED_P1_LAST_IDX + 1):
+        dx = abs(frames[i]["x"] - sampled_p1[i]["x"])
+        dy = abs(frames[i]["y"] - sampled_p1[i]["y"])
+        dz = abs(frames[i]["z"] - sampled_p1[i]["z"])
+        max_p1_diff = max(max_p1_diff, dx, dy, dz)
+    assert max_p1_diff < 1e-9, f"İlk 937 nokta değişmiş! max_p1_diff={max_p1_diff}"
+
+    # 2) Nokta aralığı ve eğim kontrolü
     for i in range(len(frames) - 1):
         a, b = frames[i], frames[i + 1]
         dx = b["x"] - a["x"]
@@ -1277,9 +1388,15 @@ def verify_track(frames, seg_meta, tunnel_info, placement_counts):
             if g > max_grade:
                 max_grade = g
                 max_grade_s = a["s"]
+            if i >= PRESERVED_P1_LAST_IDX and g > ext_max_grade:
+                ext_max_grade = g
+                ext_max_grade_s = a["s"]
 
+    # 3) Yarıçap kontrolü (tüm harita ve yeni uzatma bölümü)
     min_center_r = 1e9
     min_r_s = 0.0
+    ext_min_center_r = 1e9
+    ext_min_r_s = 0.0
     k_win = 3
     for i in range(k_win, len(frames) - k_win):
         p0 = frames[i - k_win]
@@ -1294,40 +1411,93 @@ def verify_track(frames, seg_meta, tunnel_info, placement_counts):
             if r < min_center_r:
                 min_center_r = r
                 min_r_s = p1["s"]
+            if i >= PRESERVED_P1_LAST_IDX and r < ext_min_center_r:
+                ext_min_center_r = r
+                ext_min_r_s = p1["s"]
 
     min_inner_r = min_center_r - HALF_WIDTH
+    ext_min_inner_r = ext_min_center_r - HALF_WIDTH
 
+    # 4) Yolun kendisiyle kesişmeme (Self-Intersection) kontrolü
+    # Komşu olmayan yol kolları (|j - i| >= 40, yani yol boyunca >= 100 m uzaktaki kollar) arası en kısa 2B ve 3B mesafe
+    min_nonadj_2d_dist = 1e9
+    min_nonadj_pair = None
+    ext_min_nonadj_2d_dist = 1e9
+    ext_min_nonadj_pair = None
+    for i in range(len(frames)):
+        xi, yi, zi = frames[i]["x"], frames[i]["y"], frames[i]["z"]
+        for j in range(i + 40, len(frames)):
+            xj, yj, zj = frames[j]["x"], frames[j]["y"], frames[j]["z"]
+            d2 = (xi - xj) ** 2 + (zi - zj) ** 2
+            if d2 < min_nonadj_2d_dist:
+                min_nonadj_2d_dist = d2
+                min_nonadj_pair = (i, j, round(math.sqrt(d2), 2), round(abs(yi - yj), 2))
+            if i >= PRESERVED_P1_LAST_IDX and d2 < ext_min_nonadj_2d_dist:
+                ext_min_nonadj_2d_dist = d2
+                ext_min_nonadj_pair = (i, j, round(math.sqrt(d2), 2), round(abs(yi - yj), 2))
+
+    min_nonadj_2d_m = math.sqrt(min_nonadj_2d_dist)
+    ext_min_nonadj_2d_m = math.sqrt(ext_min_nonadj_2d_dist)
+    assert min_nonadj_2d_m >= (ROAD_WIDTH + 20.0), f"Yol kolları birbirine çok yakın: {min_nonadj_2d_m:.2f} m"
+
+    # 5) Yolun araziyle ve engellerle kesişmeme (Road-Terrain / Corridor Clearance) kontrolü
     depsgraph = bpy.context.evaluated_depsgraph_get()
     obstacle_trees = []
+    terrain_only_trees = []
     for o in bpy.data.objects:
         if o.type == 'MESH' and not o.name.startswith("Yol_") and "Duvar" not in o.name:
-            obstacle_trees.append((o.name, BVHTree.FromObject(o, depsgraph)))
+            bvh = BVHTree.FromObject(o, depsgraph)
+            obstacle_trees.append((o.name, bvh))
+            if o.name.startswith("Arazi_"):
+                terrain_only_trees.append((o.name, bvh))
 
     min_overhead_clearance = 1e9
+    terrain_road_intersections = 0
     for k in range(2, len(frames) - 2):
         f = frames[k]
         px, py, pz = f["x"], f["y"], f["z"]
         rx, ry, rz = f["right"]
         ux, uy, uz = f["up"]
         up_bl = Vector(u2b(ux, uy, uz)).normalized()
-        for x_lat in (-6.5, 0.0, 6.5):
+        down_bl = -up_bl
+
+        # a) Sürüş koridoru (x_lat = -6.5 .. +6.5 m) içinde yoldan (+0.20 m) yukarıya (15 m) tavan/engel kontrolü
+        for x_lat in (-6.5, -3.2, 0.0, 3.2, 6.5):
             orig_u = (
-                px + rx * x_lat + ux * 0.25,
-                py + ry * x_lat + uy * 0.25,
-                pz + rz * x_lat + uz * 0.25,
+                px + rx * x_lat + ux * 0.20,
+                py + ry * x_lat + uy * 0.20,
+                pz + rz * x_lat + uz * 0.20,
             )
             orig_bl = Vector(u2b(*orig_u))
             for ob_name, tree in obstacle_trees:
                 loc, norm, idx, dist = tree.ray_cast(orig_bl, up_bl, 15.0)
                 if loc is not None:
-                    clearance = dist + 0.25
+                    clearance = dist + 0.20
                     min_overhead_clearance = min(min_overhead_clearance, clearance)
                     assert clearance >= 7.0, (
-                        f"Sürüş koridorunda tavan/engel çakışması! {ob_name} s={f['s']:.1f}m "
+                        f"Sürüş koridorunda tavan/arazi çakışması! {ob_name} s={f['s']:.1f}m "
                         f"x_lat={x_lat}m yükseklik={clearance:.2f}m (< 7.0m)"
                     )
 
+            # b) Yol yüzeyinin hemen üstünden (+0.50 m) aşağıya (-0.45 m, yani yol üst yüzeyi +0.05 m'ye kadar)
+            # ters yönlü arazi yüzeyi kesişmesi var mı kontrolü
+            top_probe_u = (
+                px + rx * x_lat + ux * 0.50,
+                py + ry * x_lat + uy * 0.50,
+                pz + rz * x_lat + uz * 0.50,
+            )
+            top_probe_bl = Vector(u2b(*top_probe_u))
+            for ob_name, tree in terrain_only_trees:
+                loc, norm, idx, dist = tree.ray_cast(top_probe_bl, down_bl, 0.48)
+                if loc is not None:
+                    terrain_road_intersections += 1
+                    raise AssertionError(
+                        f"Arazi yol yüzeyini kesiyor! {ob_name} s={f['s']:.1f}m x_lat={x_lat}m"
+                    )
+
     hairpins = [s for s in seg_meta if "Firkete" in s["name"]]
+    new_hairpins = [s for s in hairpins if s["start_m"] >= 2300.0]
+
     total_tris = sum(
         sum(max(0, len(p.vertices) - 2) for p in o.data.polygons)
         for o in bpy.data.objects if o.type == 'MESH'
@@ -1336,17 +1506,22 @@ def verify_track(frames, seg_meta, tunnel_info, placement_counts):
         sum(max(0, len(p.vertices) - 2) for p in o.data.polygons)
         for o in bpy.data.objects if o.type == 'MESH' and o.name.startswith("Arazi_")
     )
+    road_tris = total_tris - terrain_tris
 
-    assert 2000.0 <= total_len <= 3000.0, f"Uzunluk hatası: {total_len}"
+    assert 4800.0 <= total_len <= 5250.0, f"Uzunluk ~5 km değil: {total_len}"
     assert max_step <= 4.0, f"Nokta aralığı > 4 m: {max_step}"
     assert max_grade <= 0.12, f"Eğim > %12: {max_grade * 100:.2f}%"
     assert min_inner_r >= 12.0, f"Firkete iç yarıçapı < 12 m: {min_inner_r:.2f}"
-    assert len(hairpins) >= 4, f"Firkete sayısı < 4: {len(hairpins)}"
-    assert len(tunnel_info) >= 2 and max(t["length_m"] for t in tunnel_info) >= 150.0, "Tünel kuralı hatası"
-    assert terrain_tris <= 250000, f"Arazi üçgen sayısı > 250k: {terrain_tris}"
+    assert len(new_hairpins) >= 6, f"Yeni firkete sayısı < 6: {len(new_hairpins)}"
+    assert terrain_tris <= 350000, f"Arazi üçgen sayısı > 350k: {terrain_tris}"
+    assert terrain_road_intersections == 0, f"Arazi-yol kesişmesi: {terrain_road_intersections}"
 
     stats = {
         "uzunluk_m": round(total_len, 1),
+        "korunan_ilk_bolum_uzunluk_m": round(frames[PRESERVED_P1_LAST_IDX]["s"], 1),
+        "korunan_ilk_bolum_nokta_sayisi": PRESERVED_P1_LAST_IDX + 1,
+        "korunan_ilk_bolum_maks_fark_m": max_p1_diff,
+        "yeni_bolum_uzunluk_m": round(total_len - frames[PRESERVED_P1_LAST_IDX]["s"], 1),
         "nokta_sayisi": len(frames),
         "max_nokta_araligi_m": round(max_step, 3),
         "yol_genisligi_m": ROAD_WIDTH,
@@ -1356,27 +1531,42 @@ def verify_track(frames, seg_meta, tunnel_info, placement_counts):
         "bitis_duzlugu_m": 165.0,
         "en_dik_egim_yuzde": round(max_grade * 100.0, 2),
         "en_dik_egim_konum_m": round(max_grade_s, 1),
+        "yeni_bolum_en_dik_egim_yuzde": round(ext_max_grade * 100.0, 2),
+        "yeni_bolum_en_dik_egim_konum_m": round(ext_max_grade_s, 1),
         "en_fazla_yanal_egim_derece": round(max_bank, 2),
         "en_dar_merkez_yaricap_m": round(min_center_r, 2),
         "en_dar_ic_yaricap_m": round(min_inner_r, 2),
         "en_dar_yaricap_konum_m": round(min_r_s, 1),
+        "yeni_bolum_en_dar_merkez_yaricap_m": round(ext_min_center_r, 2),
+        "yeni_bolum_en_dar_ic_yaricap_m": round(ext_min_inner_r, 2),
+        "yeni_bolum_en_dar_yaricap_konum_m": round(ext_min_r_s, 1),
+        "en_kisa_komsu_olmayan_yol_mesafesi_2b_m": round(min_nonadj_2d_m, 2),
+        "yeni_bolum_firkete_kollari_arasi_en_kisa_2b_m": round(ext_min_nonadj_2d_m, 2),
+        "yol_kendisiyle_kesisme": 0,
+        "yol_araziyle_kesisme": terrain_road_intersections,
         "en_alcak_tavan_acikligi_m": round(min_overhead_clearance, 2),
         "irtifa_baslangic_m": round(frames[0]["y"], 2),
+        "irtifa_eski_bitis_m": round(frames[PRESERVED_P1_LAST_IDX]["y"], 2),
         "irtifa_bitis_m": round(frames[-1]["y"], 2),
+        "toplam_firkete_sayisi": len(hairpins),
+        "yeni_firkete_sayisi": len(new_hairpins),
         "firketeler": [
             {
                 "ad": h["name"],
-                "baslangic_m": round(h["start_m"], 1),
-                "bitis_m": round(h["end_m"], 1),
+                "baslangic_m": h["start_3d_m"],
+                "bitis_m": h["end_3d_m"],
                 "aci_derece": h["turn_deg"],
             }
             for h in hairpins
         ],
         "tuneller": tunnel_info,
         "arazi_ucgen": terrain_tris,
+        "yol_bariyer_tunel_ucgen": road_tris,
         "toplam_ucgen": total_tris,
         "mesh_sayisi": sum(1 for o in bpy.data.objects if o.type == 'MESH'),
         "yerlesim_sayilari": placement_counts,
+        "yerlesimden_cikarilan_yeni_yol_ustu": removed_new_road,
+        "yerlesimden_cikarilan_eski_bitis": removed_old_finish,
     }
     print("=== DOĞRULAMA GEÇTİ ===")
     print(json.dumps(stats, indent=2, ensure_ascii=False))
@@ -1384,23 +1574,18 @@ def verify_track(frames, seg_meta, tunnel_info, placement_counts):
 
 
 # ---------------------------------------------------------------------------
-# 5. Önizleme Görseli Üretimi (Üstten + Perspektif + Yol Seviyesi Görünümler)
+# 5. Önizleme Görseli Üretimi (Üstten Harita + Yeni Üst Üste Firketeler + Zirve)
 # ---------------------------------------------------------------------------
 def spawn_preview_props(placements, mats):
-    """
-    Önizleme renderlarında ağaçların, çimenlerin, kayaların ve tabelaların
-    yol seviyesinden görünmesi için geçici instance objeleri oluşturur
-    (Render bitince FBX dışa aktarılmadan önce tamamen silinir).
-    """
     proto_map = {
-        "Agac_Cam_01":         cevre_modelleri.build_pine_tree(mats, is_lod1=False, name_prefix="Proto_Agac_Cam"),
-        "Agac_Ladin_01":       cevre_modelleri.build_spruce_tree(mats, is_lod1=False, name_prefix="Proto_Agac_Ladin"),
-        "Agac_KarliCam_01":    cevre_modelleri.build_snow_pine_tree(mats, is_lod1=False, name_prefix="Proto_Agac_KarliCam"),
-        "Cimen_Obek_01":       cevre_modelleri.build_grass_clump(mats, is_lod1=True, name_prefix="Proto_Cimen"),
-        "Kaya_Buyuk_01":       cevre_modelleri.build_rock_mesh("Proto_Kaya_Buyuk", [mats["Mat_Kaya"], mats["Mat_Kar"]], 3.6, 2.8, 3.2, subdiv=2, seed=101, snow_cap=True),
-        "Kaya_Orta_01":        cevre_modelleri.build_rock_mesh("Proto_Kaya_Orta", [mats["Mat_Kaya"]], 1.8, 1.35, 1.6, subdiv=2, seed=202, snow_cap=False),
-        "Tabela_KeskinViraj":  cevre_modelleri.build_chevron_sign(mats, is_lod1=False, name_prefix="Proto_Tabela_Viraj"),
-        "Tabela_KayaDusebilir":cevre_modelleri.build_hazard_sign(mats, is_lod1=False, name_prefix="Proto_Tabela_Kaya"),
+        "Agac_Cam_01":          cevre_modelleri.build_pine_tree(mats, is_lod1=False, name_prefix="Proto_Agac_Cam"),
+        "Agac_Ladin_01":        cevre_modelleri.build_spruce_tree(mats, is_lod1=False, name_prefix="Proto_Agac_Ladin"),
+        "Agac_KarliCam_01":     cevre_modelleri.build_snow_pine_tree(mats, is_lod1=False, name_prefix="Proto_Agac_KarliCam"),
+        "Cimen_Obek_01":        cevre_modelleri.build_grass_clump(mats, is_lod1=True, name_prefix="Proto_Cimen"),
+        "Kaya_Buyuk_01":        cevre_modelleri.build_rock_mesh("Proto_Kaya_Buyuk", [mats["Mat_Kaya"], mats["Mat_Kar"]], 3.6, 2.8, 3.2, subdiv=2, seed=101, snow_cap=True),
+        "Kaya_Orta_01":         cevre_modelleri.build_rock_mesh("Proto_Kaya_Orta", [mats["Mat_Kaya"]], 1.8, 1.35, 1.6, subdiv=2, seed=202, snow_cap=False),
+        "Tabela_KeskinViraj":   cevre_modelleri.build_chevron_sign(mats, is_lod1=False, name_prefix="Proto_Tabela_Viraj"),
+        "Tabela_KayaDusebilir": cevre_modelleri.build_hazard_sign(mats, is_lod1=False, name_prefix="Proto_Tabela_Kaya"),
     }
     for po in proto_map.values():
         po.hide_render = True
@@ -1417,7 +1602,6 @@ def spawn_preview_props(placements, mats):
         inst = bpy.data.objects.new(f"PrevInst_{idx}", proto.data)
         px, py, pz = item["p"]
         inst.location = Vector(u2b(px, py, pz))
-        # Unity +Y etrafında ry dönüşü -> Blender Z etrafında -ry dönüşü
         inst.rotation_euler = Euler((0.0, 0.0, -math.radians(item["r"])), 'XYZ')
         sc = float(item["s"])
         inst.scale = Vector((sc, sc, sc))
@@ -1450,17 +1634,16 @@ def render_previews(frames, placements, mats, preview_dir):
     world.use_nodes = True
     bg = world.node_tree.nodes.get("Background")
     if bg:
-        bg.inputs[0].default_value = (0.10, 0.13, 0.19, 1.0)
-        bg.inputs[1].default_value = 1.1
+        bg.inputs[0].default_value = (0.12, 0.15, 0.22, 1.0)
+        bg.inputs[1].default_value = 1.15
 
     sun_data = bpy.data.lights.new("PreviewSun", type='SUN')
-    sun_data.energy = 3.2
-    sun_data.color = (0.85, 0.90, 1.0)
+    sun_data.energy = 3.4
+    sun_data.color = (0.90, 0.94, 1.0)
     sun_obj = bpy.data.objects.new("PreviewSun", sun_data)
     scene.collection.objects.link(sun_obj)
-    sun_obj.rotation_euler = Euler((math.radians(38.0), math.radians(-28.0), math.radians(25.0)), 'XYZ')
+    sun_obj.rotation_euler = Euler((math.radians(40.0), math.radians(-26.0), math.radians(28.0)), 'XYZ')
 
-    # Far ışığı etkisi için kameraya bağlı noktasal/spot ışık
     headlight_data = bpy.data.lights.new("PreviewHeadlight", type='POINT')
     headlight_data.energy = 1800.0
     headlight_data.color = (1.0, 0.92, 0.78)
@@ -1474,7 +1657,7 @@ def render_previews(frames, placements, mats, preview_dir):
 
     cx = 0.5 * (min(xs_bl) + max(xs_bl))
     cy = 0.5 * (min(ys_bl) + max(ys_bl))
-    span = max(max(xs_bl) - min(xs_bl), max(ys_bl) - min(ys_bl)) + 260.0
+    span = max(max(xs_bl) - min(xs_bl), max(ys_bl) - min(ys_bl)) + 280.0
 
     cam_data = bpy.data.cameras.new("PreviewCam")
     cam_obj = bpy.data.objects.new("PreviewCam", cam_data)
@@ -1483,12 +1666,12 @@ def render_previews(frames, placements, mats, preview_dir):
 
     rendered_paths = []
 
-    # 1) Üstten (Top-Down) Ortografik Harita Görünümü
+    # 1) Üstten (Top-Down) 5 km Tam Harita Görünümü
     cam_data.type = 'ORTHO'
     cam_data.ortho_scale = span
     cam_data.clip_start = 1.0
-    cam_data.clip_end = 2500.0
-    cam_obj.location = Vector((cx, cy, max(zs_bl) + 550.0))
+    cam_data.clip_end = 3500.0
+    cam_obj.location = Vector((cx, cy, max(zs_bl) + 650.0))
     cam_obj.rotation_euler = Euler((0.0, 0.0, 0.0), 'XYZ')
     scene.render.resolution_x = 1400
     scene.render.resolution_y = 1400
@@ -1497,52 +1680,52 @@ def render_previews(frames, placements, mats, preview_dir):
     bpy.ops.render.render(write_still=True)
     rendered_paths.append(top_path)
 
-    # 2) Genel Perspektif Görünümü
+    # 2) Yeni Firketeler Genel Perspektif Görünümü (Üst üste dizilmiş 7 yeni firkete yamacı)
     cam_data.type = 'PERSP'
-    cam_data.lens = 28.0
-    f_look = frames[int(len(frames) * 0.32)]
-    f_cam = frames[int(len(frames) * 0.25)]
-    cam_pos = Vector(u2b(f_cam["x"] - 45.0, f_cam["y"] + 42.0, f_cam["z"] - 35.0))
-    target_pos = Vector(u2b(f_look["x"], f_look["y"] + 4.0, f_look["z"]))
+    cam_data.lens = 26.0
+    f_mid_sw = frames[1380]  # Firkete 9 civarı orta yamaç
+    cam_pos = Vector(u2b(f_mid_sw["x"] - 260.0, f_mid_sw["y"] + 165.0, f_mid_sw["z"] - 210.0))
+    target_pos = Vector(u2b(f_mid_sw["x"] + 25.0, f_mid_sw["y"] - 10.0, f_mid_sw["z"] + 40.0))
     cam_obj.location = cam_pos
     cam_obj.rotation_euler = (target_pos - cam_pos).to_track_quat('-Z', 'Y').to_euler()
     scene.render.resolution_x = 1280
     scene.render.resolution_y = 720
-    persp_path = os.path.join(preview_dir, "dag_tirmanisi_perspektif.png")
-    scene.render.filepath = persp_path
-    bpy.ops.render.render(write_still=True)
-    rendered_paths.append(persp_path)
+    for out_name in ("dag_tirmanisi_perspektif.png", "yeni_firketeler_01_genel.png"):
+        out_p = os.path.join(preview_dir, out_name)
+        scene.render.filepath = out_p
+        bpy.ops.render.render(write_still=True)
+        rendered_paths.append(out_p)
 
-    # 3) Yol Seviyesi Görünümleri (4 farklı noktadan sürücü gözü yüksekliğinde):
-    # - yol_seviyesi_01_orman_firkete.png: 1. Firkete yaklaşımı ve çam/ladin ormanı + şevron tabelalar
-    # - yol_seviyesi_02_tunel_giris.png:   1. Tünel ağzı, kaya yamaçları ve uyarı tabelası
-    # - yol_seviyesi_03_ucurum_viraj.png:  Uçurum kenarı hızlı viraj ve uzun kıvrımlı tünel yaklaşımı
-    # - yol_seviyesi_04_karli_zirve.png:   Karlı zirve bölgesi, karlı çamlar ve bitiş kemeri yaklaşımı
-    road_views = [
-        ("yol_seviyesi_01_orman_firkete.png", 108, 120, -2.2, 2.1),
-        ("yol_seviyesi_02_tunel_giris.png",   272, 290,  1.8, 2.2),
-        ("yol_seviyesi_03_ucurum_viraj.png",  605, 622, -2.0, 2.1),
-        ("yol_seviyesi_04_karli_zirve.png",   915, 935,  1.5, 2.2),
-    ]
+    # 3) Üst Firketeden Alt Firketelere Bakış (Alttaki yolun yukarıdan görünmesi)
     cam_data.lens = 24.0
-    for filename, k_cam, k_tgt, lat_off, h_off in road_views:
-        fc = frames[k_cam]
-        ft = frames[k_tgt]
-        rx, ry, rz = fc["right"]
-        ux, uy, uz = fc["up"]
-        c_u = (
-            fc["x"] + rx * lat_off + ux * h_off,
-            fc["y"] + ry * lat_off + uy * h_off,
-            fc["z"] + rz * lat_off + uz * h_off,
-        )
-        t_u = (ft["x"], ft["y"] + 1.6, ft["z"])
-        c_bl = Vector(u2b(*c_u))
-        t_bl = Vector(u2b(*t_u))
-        cam_obj.location = c_bl
-        cam_obj.rotation_euler = (t_bl - c_bl).to_track_quat('-Z', 'Y').to_euler()
-        headlight_obj.location = c_bl + Vector((0.0, 0.0, 1.2))
+    f_upper = frames[1625]  # Kar_Yamaci_2 / Firkete 11 çıkışı (y ~ 365 m)
+    f_lower = frames[1245]  # Alttaki Terase_2 / Firkete 8 katmanı (y ~ 268 m)
+    c_u = (f_upper["x"] - 14.0, f_upper["y"] + 8.5, f_upper["z"] - 12.0)
+    t_u = (f_lower["x"] + 25.0, f_lower["y"] + 4.0, f_lower["z"] - 10.0)
+    c_bl = Vector(u2b(*c_u))
+    t_bl = Vector(u2b(*t_u))
+    cam_obj.location = c_bl
+    cam_obj.rotation_euler = (t_bl - c_bl).to_track_quat('-Z', 'Y').to_euler()
+    headlight_obj.location = c_bl + Vector((0.0, 0.0, 1.5))
+    sw_view_path = os.path.join(preview_dir, "yeni_firketeler_02_ustten_bakis.png")
+    scene.render.filepath = sw_view_path
+    bpy.ops.render.render(write_still=True)
+    rendered_paths.append(sw_view_path)
 
-        out_p = os.path.join(preview_dir, filename)
+    # 4) Zirve Bitiş Düzlüğü ve Bitiş Kemeri Görünümü
+    fc = frames[len(frames) - 52]
+    ft = frames[len(frames) - 16]
+    rx, ry, rz = fc["right"]
+    ux, uy, uz = fc["up"]
+    c_u = (fc["x"] + rx * 1.5 + ux * 2.4, fc["y"] + ry * 1.5 + uy * 2.4, fc["z"] + rz * 1.5 + uz * 2.4)
+    t_u = (ft["x"], ft["y"] + 2.0, ft["z"])
+    c_bl = Vector(u2b(*c_u))
+    t_bl = Vector(u2b(*t_u))
+    cam_obj.location = c_bl
+    cam_obj.rotation_euler = (t_bl - c_bl).to_track_quat('-Z', 'Y').to_euler()
+    headlight_obj.location = c_bl + Vector((0.0, 0.0, 1.2))
+    for out_name in ("yol_seviyesi_04_karli_zirve.png", "yeni_firketeler_03_zirve_bitis.png"):
+        out_p = os.path.join(preview_dir, out_name)
         scene.render.filepath = out_p
         bpy.ops.render.render(write_still=True)
         rendered_paths.append(out_p)
@@ -1555,162 +1738,6 @@ def render_previews(frames, placements, mats, preview_dir):
     bpy.data.lights.remove(headlight_data)
     cleanup_preview_props(temp_prop_objs)
     return rendered_paths
-
-
-# ---------------------------------------------------------------------------
-# Unity URP Lit .mat Dosyası Üretici (.meta YAZMAZ, yalnız .mat yazar)
-# enableInstancingVariants: 1 ile GPU Instancing açık!
-# ---------------------------------------------------------------------------
-def write_urp_lit_mat(filepath, mat_name, base_rgb, smoothness=0.25, metallic=0.0, emission_rgb=None):
-    r, g, b = base_rgb
-    if emission_rgb is not None and max(emission_rgb) > 0.0:
-        er, eg, eb = emission_rgb
-        keywords_block = "  m_ValidKeywords:\n  - _EMISSION"
-        lightmap_flags = 2
-    else:
-        er, eg, eb = 0.0, 0.0, 0.0
-        keywords_block = "  m_ValidKeywords: []"
-        lightmap_flags = 4
-
-    content = f"""%YAML 1.1
-%TAG !u! tag:unity3d.com,2011:
---- !u!21 &2100000
-Material:
-  serializedVersion: 8
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {{fileID: 0}}
-  m_PrefabInstance: {{fileID: 0}}
-  m_PrefabAsset: {{fileID: 0}}
-  m_Name: {mat_name}
-  m_Shader: {{fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}}
-  m_Parent: {{fileID: 0}}
-  m_ModifiedSerializedProperties: 0
-{keywords_block}
-  m_InvalidKeywords: []
-  m_LightmapFlags: {lightmap_flags}
-  m_EnableInstancingVariants: 1
-  m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap:
-    RenderType: Opaque
-  disabledShaderPasses:
-  - MOTIONVECTORS
-  m_LockedProperties: 
-  m_SavedProperties:
-    serializedVersion: 3
-    m_TexEnvs:
-    - _BaseMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _BumpMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _DetailAlbedoMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _DetailMask:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _DetailNormalMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _EmissionMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _MainTex:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _MetallicGlossMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _OcclusionMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _ParallaxMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - _SpecGlossMap:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - unity_Lightmaps:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - unity_LightmapsInd:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    - unity_ShadowMasks:
-        m_Texture: {{fileID: 0}}
-        m_Scale: {{x: 1, y: 1}}
-        m_Offset: {{x: 0, y: 0}}
-    m_Ints: []
-    m_Floats:
-    - _AddPrecomputedVelocity: 0
-    - _AlphaClip: 0
-    - _AlphaToMask: 0
-    - _Blend: 0
-    - _BlendModePreserveSpecular: 1
-    - _BumpScale: 1
-    - _ClearCoatMask: 0
-    - _ClearCoatSmoothness: 0
-    - _Cull: 2
-    - _Cutoff: 0.5
-    - _DetailAlbedoMapScale: 1
-    - _DetailNormalMapScale: 1
-    - _DstBlend: 0
-    - _DstBlendAlpha: 0
-    - _EnvironmentReflections: 1
-    - _GlossMapScale: 0
-    - _Glossiness: 0
-    - _GlossyReflections: 0
-    - _Metallic: {metallic}
-    - _OcclusionStrength: 1
-    - _Parallax: 0.005
-    - _QueueOffset: 0
-    - _ReceiveShadows: 1
-    - _Smoothness: {smoothness}
-    - _SmoothnessTextureChannel: 0
-    - _SpecularHighlights: 1
-    - _SrcBlend: 1
-    - _SrcBlendAlpha: 1
-    - _Surface: 0
-    - _WorkflowMode: 1
-    - _ZWrite: 1
-    m_Colors:
-    - _BaseColor: {{r: {r}, g: {g}, b: {b}, a: 1}}
-    - _Color: {{r: {r}, g: {g}, b: {b}, a: 1}}
-    - _EmissionColor: {{r: {er}, g: {eg}, b: {eb}, a: 1}}
-    - _SpecColor: {{r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}}
-  m_BuildTextureStacks: []
-  m_AllowLocking: 1
---- !u!114 &7657601005869460982
-MonoBehaviour:
-  m_ObjectHideFlags: 11
-  m_CorrespondingSourceObject: {{fileID: 0}}
-  m_PrefabInstance: {{fileID: 0}}
-  m_PrefabAsset: {{fileID: 0}}
-  m_GameObject: {{fileID: 0}}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {{fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  version: 10
-"""
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(content)
 
 
 # ---------------------------------------------------------------------------
@@ -1736,13 +1763,8 @@ def export_terrain_only_fbx(terrain_objs, filepath):
 
 
 def build_all(export_to_assets=False):
-    # 1) Önce ayrı çevre modellerini (8 adet FBX) üret
-    prop_report = cevre_modelleri.build_all_props(export_to_assets=export_to_assets)
-
-    # 2) Şimdi ana sahneyi (Yol, Bariyer, Tünel, Kemer + Detaylı Arazi) kur
     clear_scene()
 
-    # Toplam 11 malzeme (<= 12 kuralına tam uygun)
     mats = {
         "Mat_Asfalt":     make_mat("Mat_Asfalt",     (0.18, 0.19, 0.21), roughness=0.72),
         "Mat_YolCizgi":   make_mat("Mat_YolCizgi",   (0.88, 0.86, 0.76), roughness=0.50),
@@ -1759,31 +1781,46 @@ def build_all(export_to_assets=False):
         "Mat_YaprakCam":  make_mat("Mat_YaprakCam",  (0.11, 0.24, 0.14), roughness=0.85),
     }
 
-    frames, seg_meta = generate_centerline()
+    frames, seg_meta, sampled_p1 = generate_centerline()
     build_road_and_markings(frames, mats)
     build_barriers(frames, mats)
     _, tunnel_info = build_tunnels(frames, mats)
     build_arches(frames, mats)
-    terrain_objs = build_detailed_terrain(frames, tunnel_info, mats)
+    terrain_objs = build_detailed_terrain(frames, sampled_p1, tunnel_info, mats)
 
     bpy.context.view_layer.update()
 
-    # 3) Çevre yerleşimini (Dag_Yerlesim.json) arazi üzerine raycast ile hesapla
-    placements, placement_counts = generate_placements(frames, seg_meta, tunnel_info)
+    # İlk bölümün çevre yerleşimini koru, yeni yolun üstünden geçtiklerini çıkar
+    placements, placement_counts, removed_new_road, removed_old_finish = update_placements_for_phase1_extension(
+        frames, sampled_p1, seg_meta, tunnel_info
+    )
 
-    # 4) Doğrulama
-    stats = verify_track(frames, seg_meta, tunnel_info, placement_counts)
-    stats["modeller"] = prop_report
+    # Doğrulama
+    stats = verify_track(
+        frames, sampled_p1, seg_meta, tunnel_info,
+        placement_counts, removed_new_road, removed_old_finish
+    )
 
     base_src_dir = "/home/zoro/harvester/Harvester/BlenderSources/maps/DagTirmanisi"
     os.makedirs(base_src_dir, exist_ok=True)
     preview_dir = os.path.join(base_src_dir, "onizleme")
 
-    # 5) Önizleme görsellerini (üstten + perspektif + 4 adet yol seviyesi) üret
+    # Önizleme görsellerini üret
     render_previews(frames, placements, mats, preview_dir)
 
-    # NOT: Dag_Merkez.json 1. aşamada kilitlendi ve DEĞİŞTİRİLMEZ.
-    # Yalnızca yoksa oluşturulur, varsa birebir korunduğu doğrulanır.
+    # Dag_Merkez.json verisi (ilk 937 nokta birebir aynı, bitis_m yeni zirveye göre güncellendi)
+    finish_m = round(frames[-1]["s"] - FINISH_MARGIN, 1)
+    merkez_data = {
+        "genislik": int(ROAD_WIDTH),
+        "noktalar": [[round(f["x"], 3), round(f["y"], 3), round(f["z"], 3)] for f in frames],
+        "baslangic_m": int(START_M),
+        "bitis_m": finish_m,
+    }
+
+    src_merkez_path = os.path.join(base_src_dir, "Dag_Merkez.json")
+    with open(src_merkez_path, "w", encoding="utf-8") as fp:
+        json.dump(merkez_data, fp, ensure_ascii=False, separators=(",", ":"))
+
     src_yerlesim_path = os.path.join(base_src_dir, "Dag_Yerlesim.json")
     with open(src_yerlesim_path, "w", encoding="utf-8") as fp:
         json.dump(placements, fp, ensure_ascii=False, separators=(",", ":"))
@@ -1792,7 +1829,6 @@ def build_all(export_to_assets=False):
     with open(stats_path, "w", encoding="utf-8") as fp:
         json.dump(stats, fp, ensure_ascii=False, indent=2)
 
-    # 6) Dag_Yol.fbx (yol + bariyer + tünel + kemer + detaylı Arazi_* birlikte) ve Dag_Arazi.fbx (yalnız Arazi_*)
     src_yol_fbx = os.path.join(base_src_dir, "Dag_Yol.fbx")
     bpy.ops.export_scene.fbx(
         filepath=src_yol_fbx,
@@ -1812,25 +1848,11 @@ def build_all(export_to_assets=False):
 
     if export_to_assets:
         assets_dir = "/home/zoro/harvester/Harvester/Assets/Maps/DagTirmanisi"
-        mats_dir = os.path.join(assets_dir, "Materials")
-        os.makedirs(mats_dir, exist_ok=True)
+        os.makedirs(assets_dir, exist_ok=True)
 
-        # Toplam 11 URP Lit malzeme (.meta yazılmaz)
-        mat_defs = [
-            ("Mat_Asfalt",     (0.18, 0.19, 0.21), 0.28, 0.0, None),
-            ("Mat_YolCizgi",   (0.88, 0.86, 0.76), 0.35, 0.0, None),
-            ("Mat_Bariyer",    (0.46, 0.47, 0.50), 0.25, 0.0, None),
-            ("Mat_Reflektor",  (0.95, 0.38, 0.08), 0.60, 0.0, (1.2, 0.45, 0.08)),
-            ("Mat_TunelBeton", (0.28, 0.29, 0.32), 0.20, 0.0, None),
-            ("Mat_TunelIsik",  (1.00, 0.92, 0.75), 0.80, 0.0, (2.2, 1.9, 1.4)),
-            ("Mat_Kaya",       (0.32, 0.29, 0.26), 0.12, 0.0, None),
-            ("Mat_ToprakKar",  (0.22, 0.28, 0.20), 0.14, 0.0, None),
-            ("Mat_Kar",        (0.86, 0.90, 0.95), 0.32, 0.0, None),
-            ("Mat_AgacGovde",  (0.26, 0.17, 0.10), 0.10, 0.0, None),
-            ("Mat_YaprakCam",  (0.11, 0.24, 0.14), 0.15, 0.0, None),
-        ]
-        for m_name, rgb, smooth, metal, emis in mat_defs:
-            write_urp_lit_mat(os.path.join(mats_dir, f"{m_name}.mat"), m_name, rgb, smooth, metal, emis)
+        assets_merkez_path = os.path.join(assets_dir, "Dag_Merkez.json")
+        with open(assets_merkez_path, "w", encoding="utf-8") as fp:
+            json.dump(merkez_data, fp, ensure_ascii=False, separators=(",", ":"))
 
         assets_yerlesim_path = os.path.join(assets_dir, "Dag_Yerlesim.json")
         with open(assets_yerlesim_path, "w", encoding="utf-8") as fp:
@@ -1852,7 +1874,7 @@ def build_all(export_to_assets=False):
 
         assets_arazi_fbx = os.path.join(assets_dir, "Dag_Arazi.fbx")
         export_terrain_only_fbx(terrain_objs, assets_arazi_fbx)
-        print(f"Assets altına aktarıldı: {assets_yerlesim_path}, {assets_yol_fbx}, {assets_arazi_fbx}")
+        print(f"Assets altına aktarıldı: {assets_merkez_path}, {assets_yerlesim_path}, {assets_yol_fbx}, {assets_arazi_fbx}")
 
 
 if __name__ == "__main__":
