@@ -48,6 +48,21 @@ Yeni HUD'u `Assets/scripts/UI/Yaris/` altında yaz (uGUI/TMP, LethalLook görün
 
 **Sıra:** C1 → C2 → C3 → C4 → C5 → C6 → C7. Her biri ayrı teslim. Play testlerini kilitle yap; tek oyunculu akış (SÜR → yarış → dönüş) teslimden önce bir kez uçtan uca denenmeli.
 
+### C8. Menü akışı ve pist oylaması (C7 kabul edildi; kullanıcı kararı 14 Kasım)
+Kullanıcının istediği akış:
+- **Ana ekran:** TEK OYUNCULU / ÇOK OYUNCULU (+ ayarlar, çıkış). Bu kısım iyi, kalsın.
+- **Tek oyunculu** → oyuncu menüsü: **GARAJ / ARAÇ SEÇ**, **MAĞAZA**, **SÜR**, **AYARLAR**, **ANA MENÜ**. SÜR → **pist seçimi** ekranı (pist kartları: ad, tür turlu/sprint, uzunluk) → seçince yarış başlar (`lobby.SetTrack` + `SetReady(true)`).
+- **Çok oyunculu** → bağlantı sayfası (mevcut, iyi) → odaya girince aynı oyuncu menüsü (GARAJ / ARAÇ SEÇ, MAĞAZA, SÜR, AYARLAR, ANA MENÜ=odadan çık). SÜR → **pist oylaması** ekranı: her pist kartında oy sayısı ve kimin oy verdiği; oyuncu bir karta tıklayınca oy verir (tekrar tıklarsa geri alır), sonra HAZIR. Herkes hazırsa yarış başlar; **çoğunluğun seçtiği pist, eşitlikte rastgele** (sunucu karar verir). Oyuncu listesinde kim hazır/kim oy verdi görünsün. Karar anında kısa bir "Seçilen pist: …" bildirimi (eşitlikte "Eşitlik → rastgele: …").
+- Oylamanın ağ tarafı hazır (lobby.cs): `VoteTrack(int index)` (-1 ya da aynı pist = geri al), `LocalVote`, `TrackVotes(int)`, `LeadingTrack` (eşitlik/oy yok = -1), `GetPlayer(i).VotedTrack`, karar sonrası `TrackIndex` değişir ve `RoomChanged` tetiklenir. Kurucunun pist seçme düğmesi (C7) çok oyunculuda kaldırılır; tek oyunculuda `SetTrack` kalır.
+- Test bayrakları (`-autoHost`, `-autoJoin`, `-autoStart`, `-track`) bozulmamalı.
+
+### C9. Yarışta mini harita
+Yarış sırasında köşede **dairesel mini harita** (örnek: yarış oyunlarındaki yuvarlak radar): pist çizgisi (`RaceTrack.Current.Centerline`), oyuncu ortada, harita oyuncunun gidiş yönüne göre döner (yukarı = ileri).
+- İşaretler **üçgen** ve yöne bakar: **kendin yeşil**, diğer oyuncular **sarı**, **harvester kırmızı** (`RaceCar.All`, yerel araba için mevcut HUD'un kullandığı yol, `HarvesterAI.Instance`). Elenen arabalar gösterilmez. Daire dışına düşen işaretler kenara sabitlenir (harvester'ın yönü hep görülsün).
+- Ölçek: daire yarıçapı ~150 m (sprint pistinde de çalışmalı; Dağ Tırmanışı 2,5 km, ileride 5 km). Yükseklik farkı yok sayılır (yukarıdan görünüm).
+- **Performans:** ek kamera yok. Pist çizgisini yarış başında bir kez bir dokuya ya da UI mesh'ine çiz, her karede yalnız döndür/kaydır; işaretler UI Image. GC tahsisi yok.
+- Mevcut HUD (`Assets/scripts/UI/Yaris/`) ile çakışmasın; izleyici modunda izlenen arabayı merkez al. Ayarlardan aç/kapat (varsayılan açık).
+
 ---
 
 ## AGY (Antigravity — modeller)

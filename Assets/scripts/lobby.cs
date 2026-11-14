@@ -17,17 +17,21 @@ public struct LobbyPlayer : INetworkSerializable, IEquatable<LobbyPlayer>
     public FixedString32Bytes Name;
     /// <summary>Oyuncu garajda aracını seçip "hazır" dedi. Herkes hazırsa yarış kendiliğinden başlar.</summary>
     public bool Ready;
+    /// <summary>Pist oyu: 0 = oy vermedi, n = TrackScenes[n-1]. Okumak için VotedTrack.</summary>
+    public byte Vote;
+    public int VotedTrack => Vote - 1;
 
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
     {
         serializer.SerializeValue(ref ClientId);
         serializer.SerializeValue(ref Name);
         serializer.SerializeValue(ref Ready);
+        serializer.SerializeValue(ref Vote);
     }
 
     public bool Equals(LobbyPlayer other)
     {
-        return ClientId == other.ClientId && Name.Equals(other.Name) && Ready == other.Ready;
+        return ClientId == other.ClientId && Name.Equals(other.Name) && Ready == other.Ready && Vote == other.Vote;
     }
 }
 
@@ -253,6 +257,88 @@ public class lobby : NetworkBehaviour
         if (index < 0 || index >= TrackScenes.Length) return;
         TrackScene = TrackScenes[index];
         if (IsSpawned && IsServer && !gameStarted) trackIndex.Value = (byte)index;
+    }
+
+    /// <summary>
+    /// Çok oyunculu pist oylaması: yerel oyuncu bir piste oy verir (aynı oyu tekrar vermek ya da -1 oyu geri alır).
+    /// Yarış başlarken sunucu en çok oyu alan pisti seçer; eşitlikte eşit olanlardan rastgele. Hiç oy yoksa
+    /// TrackIndex'teki pist kalır. Tek oyunculuda doğrudan SetTrack gibi davranır.
+    /// </summary>
+    public void VoteTrack(int index)
+    {
+        if (index >= TrackScenes.Length) return;
+        if (SinglePlayer) { if (index >= 0) SetTrack(index); return; }
+        if (!IsSpawned) return;
+        VoteTrackRpc(index < 0 ? -1 : index);
+    }
+
+    [Rpc(SendTo.Server)]
+    private void VoteTrackRpc(int index, RpcParams rpcParams = default)
+    {
+        if (gameStarted || index >= TrackScenes.Length) return;
+        int i = IndexOf(rpcParams.Receive.SenderClientId);
+        if (i < 0) return;
+        var p = players[i];
+        byte vote = (byte)(index < 0 ? 0 : index + 1);
+        if (p.Vote == vote) return;
+        p.Vote = vote;
+        players[i] = p;
+    }
+
+    /// <summary>Yerel oyuncunun oyu (TrackScenes indeksi); oy vermediyse -1.</summary>
+    public int LocalVote
+    {
+        get
+        {
+            if (!IsSpawned) return -1;
+            foreach (var p in players) if (p.ClientId == NetworkManager.LocalClientId) return p.VotedTrack;
+            return -1;
+        }
+    }
+
+    /// <summary>Bir pistin aldığı oy sayısı.</summary>
+    public int TrackVotes(int index)
+    {
+        if (!IsSpawned) return 0;
+        int n = 0;
+        foreach (var p in players) if (p.VotedTrack == index) n++;
+        return n;
+    }
+
+    /// <summary>Şu an önde olan pist; hiç oy yoksa ya da eşitlik varsa -1 (eşitlikte başlarken rastgele seçilir).</summary>
+    public int LeadingTrack
+    {
+        get
+        {
+            int best = -1, bestVotes = 0; bool tie = false;
+            for (int t = 0; t < TrackScenes.Length; t++)
+            {
+                int v = TrackVotes(t);
+                if (v > bestVotes) { best = t; bestVotes = v; tie = false; }
+                else if (v > 0 && v == bestVotes) tie = true;
+            }
+            return tie ? -1 : best;
+        }
+    }
+
+    // Sunucu: oylardan pisti seçer (çoğunluk, eşitlikte rastgele). Hiç oy yoksa mevcut pist kalır.
+    private void DecideTrackByVote()
+    {
+        if (SinglePlayer) return;
+        int bestVotes = 0;
+        var tied = new List<int>();
+        for (int t = 0; t < TrackScenes.Length; t++)
+        {
+            int v = TrackVotes(t);
+            if (v == 0 || v < bestVotes) continue;
+            if (v > bestVotes) { bestVotes = v; tied.Clear(); }
+            tied.Add(t);
+        }
+        if (tied.Count == 0) return;
+        int chosen = tied[UnityEngine.Random.Range(0, tied.Count)];
+        if (Debug.isDebugBuild) Debug.Log("[Lobby] Pist oylaması: " + TrackScenes[chosen] + " (" + bestVotes + " oy, eşit: " + tied.Count + ")");
+        TrackScene = TrackScenes[chosen];
+        trackIndex.Value = (byte)chosen;
     }
 
     /// <summary>Davet kodu (online oda); yoksa boş.</summary>
@@ -686,6 +772,7 @@ public class lobby : NetworkBehaviour
             MatchSettings.Players[p.ClientId] = new MatchSettings.PlayerInfo { Name = p.Name.ToString() };
         }
 
+        DecideTrackByVote();
         gameStarted = true;
         NetworkManager.SceneManager.LoadScene(RaceSceneName, LoadSceneMode.Single);
     }
