@@ -39,7 +39,9 @@ namespace Harvester.UI
         public static string Dolar(int miktar) => "$" + miktar.ToString("N0", CultureInfo.GetCultureInfo("tr-TR"));
         public static int Fiyat(int eskiFiyat) => (int)Math.Min(int.MaxValue, Math.Max(0L, (long)eskiFiyat * 5));
         public static int Bakiye => SinirsizPara ? TestBakiye : Veri.hurda;
-        public static bool Sahip(string kimlik) => Veri.sahip.Contains(kimlik);
+        // Test parasında her şey açık: gerçek kayıttaki sahiplikler test kaydında olmadığından seçimler
+        // kaydedilmiyor ve yarışta varsayılan arabaya düşülüyordu.
+        public static bool Sahip(string kimlik) => SinirsizPara || Veri.sahip.Contains(kimlik);
         public static bool SatinAl(string kimlik, int fiyat)
         {
             if (string.IsNullOrEmpty(kimlik) || fiyat < 0) return false;

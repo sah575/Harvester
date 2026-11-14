@@ -332,7 +332,7 @@ namespace Harvester.UI
             if(!Mathf.Approximately(a,b)){var old=MenuWidgets.Box(bar,"Önce",new Color(.82f,.83f,.74f));MenuWidgets.Fill(old,Vector2.zero,new Vector2(Mathf.Clamp01(a/maximum),.3f));}
         }
         void Save()
-        {if(Car==null||!HurdaEkonomisi.Sahip("araba/"+Car.id))return;LoadoutChanged();GarageLoadouts.Save(catalog,draft);candidate=draft;DrawGarage();Notice("Takılı modifiye ve araç seçimi kaydedildi.");}
+        {if(Car==null)return;if(!HurdaEkonomisi.Sahip("araba/"+Car.id)){Notice("Bu araç sende yok; önce satın al.");return;}LoadoutChanged();GarageLoadouts.Save(catalog,draft);candidate=draft;DrawGarage();Notice("Takılı modifiye ve araç seçimi kaydedildi.");}
         void DrawShop()
         {
             MenuWidgets.Clear(shopContent);if(Car==null)return;
