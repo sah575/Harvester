@@ -64,6 +64,7 @@ public class lobby : NetworkBehaviour
     /// Kurucu seçer; komut satırından -track dag. Harita seçimi arayüzü gelince oradan değişir.</summary>
     public static string TrackScene = "race";
     public static readonly string[] TrackScenes = { "race", "dag" };
+    public static readonly string[] TrackNames = { "Gece Pisti (turlu)", "Dağ Tırmanışı (sprint)" };
     static string RaceSceneName => TrackScene;
 
     // Lobi sahnesi açılınca menüde gösterilecek mesaj (ör. host bağlantısı koptu)
@@ -81,6 +82,8 @@ public class lobby : NetworkBehaviour
     private readonly NetworkList<LobbyPlayer> players = new NetworkList<LobbyPlayer>();
     // Herkes hazır olunca yarışın başlayacağı sunucu zamanı; -1: geri sayım yok
     private readonly NetworkVariable<double> autoStartAt = new NetworkVariable<double>(-1);
+    // Odada seçili pist (TrackScenes indeksi); kurucu seçer, herkes görür
+    private readonly NetworkVariable<byte> trackIndex = new NetworkVariable<byte>(0);
     [Tooltip("Herkes hazır olduktan sonra yarışın başlamasına kalan süre (sn). Tek oyunculuda beklenmez.")]
     [SerializeField] private float allReadyDelay = 3f;
     private readonly Dictionary<ulong, string> pendingNames = new Dictionary<ulong, string>();
@@ -240,6 +243,17 @@ public class lobby : NetworkBehaviour
     /// <summary>Herkes hazırsa yarışın başlamasına kalan saniye; geri sayım yoksa -1.</summary>
     public float AutoStartRemaining =>
         IsSpawned && autoStartAt.Value >= 0 ? Mathf.Max(0f, (float)(autoStartAt.Value - NetworkManager.ServerTime.Time)) : -1f;
+
+    /// <summary>Seçili pistin TrackScenes/TrackNames indeksi (odada herkes görür).</summary>
+    public int TrackIndex => IsSpawned ? Mathf.Clamp(trackIndex.Value, 0, TrackScenes.Length - 1) : Mathf.Max(0, Array.IndexOf(TrackScenes, TrackScene));
+
+    /// <summary>Sadece oda kurucusu (tek oyunculuda oyuncunun kendisi): pisti seçer. Hazır olanların hazırlığı bozulmaz.</summary>
+    public void SetTrack(int index)
+    {
+        if (index < 0 || index >= TrackScenes.Length) return;
+        TrackScene = TrackScenes[index];
+        if (IsSpawned && IsServer && !gameStarted) trackIndex.Value = (byte)index;
+    }
 
     /// <summary>Davet kodu (online oda); yoksa boş.</summary>
     public string RoomCode
@@ -549,8 +563,10 @@ public class lobby : NetworkBehaviour
             players.Clear();
             foreach (var id in NetworkManager.ConnectedClientsIds) AddPlayer(id);
             autoStartAt.Value = -1;
+            trackIndex.Value = (byte)Mathf.Max(0, Array.IndexOf(TrackScenes, TrackScene));
         }
         autoStartAt.OnValueChanged += OnAutoStartChanged;
+        trackIndex.OnValueChanged += OnTrackChanged;
 
         menuPanel.SetActive(false);
         roomPanel.SetActive(true);
@@ -564,6 +580,7 @@ public class lobby : NetworkBehaviour
     {
         players.OnListChanged -= OnPlayersChanged;
         autoStartAt.OnValueChanged -= OnAutoStartChanged;
+        trackIndex.OnValueChanged -= OnTrackChanged;
     }
 
     private void OnPlayersChanged(NetworkListEvent<LobbyPlayer> change)
@@ -572,6 +589,11 @@ public class lobby : NetworkBehaviour
     }
 
     private void OnAutoStartChanged(double previous, double current)
+    {
+        RefreshRoom();
+    }
+
+    private void OnTrackChanged(byte previous, byte current)
     {
         RefreshRoom();
     }

@@ -41,7 +41,12 @@ Yeni HUD'u `Assets/scripts/UI/Yaris/` altında yaz (uGUI/TMP, LethalLook görün
 ### C6. Bağlantı hataları
 - `lobby.Instance.MenuReturned` mesajını (ör. "Bu kodla bir oda bulunamadı.", "Oda dolu.", "Bağlantı koptu.") ana menüde görünür bir uyarı kutusunda göster; "Tamam" ile kapansın. Bağlanırken "Bağlanıyor…" ve iptal düğmesi (`LeaveRoom`).
 
-**Sıra:** C1 → C2 → C3 → C4 → C5 → C6. Her biri ayrı teslim. Play testlerini kilitle yap; tek oyunculu akış (SÜR → yarış → dönüş) teslimden önce bir kez uçtan uca denenmeli.
+### C7. Pist seçimi (C1–C6 kabul edildi)
+- Tek oyuncu ekranında ve çok oyunculu odada **pist seçici**: `lobby.TrackNames` (görünen ad), `lobby.Instance.TrackIndex` (seçili), `lobby.Instance.SetTrack(i)`. Çok oyunculuda yalnız kurucu değiştirebilir (`IsRoomOwner`), diğerleri seçili pisti görür; değişince `RoomChanged` gelir.
+- Pistin küçük bir önizleme görseli olabilir (Dağ Tırmanışı için `BlenderSources/maps/DagTirmanisi/onizleme/dag_tirmanisi_ustten.png`'yi `Assets/UI/` altına kopyalayıp kullan). Sonuç ekranında ve HUD'da pist adı gösterilebilir.
+- Dağ Tırmanışı A'dan B'ye: tur yok. HUD'daki "TUR" satırı `RaceManager.Instance.LoopTrack` false iken gizlenmeli; yerine kalan mesafe (`RaceTrack.Current.FinishDistance - Progress`) gösterilebilir. Uçtan uca test: tek oyuncu → Dağ Tırmanışı seç → SÜR → yarış → dönüş.
+
+**Sıra:** C1 → C2 → C3 → C4 → C5 → C6 → C7. Her biri ayrı teslim. Play testlerini kilitle yap; tek oyunculu akış (SÜR → yarış → dönüş) teslimden önce bir kez uçtan uca denenmeli.
 
 ---
 
@@ -64,6 +69,8 @@ Dağın eteğinden zirveye tek yönlü, **2–3 km** bir yol: keskin virajlar (e
 4. Ağaç/kaya/çimen **modelleri ayrı FBX** (`Agac_Cam_01.fbx` gibi; her biri LOD0 ≤ 1.500, LOD1 ≤ 400 üçgen) ve konumları `Dag_Yerlesim.json`: `[{"model":"Agac_Cam_01","p":[x,y,z],"r":ry,"s":olcek},...]`. Unity'de ben instancing ile yerleştireceğim; ağaçları arazinin içine gömme.
 5. Malzemeler az olsun (≤ 12), dokular ≤ 1024 px. Mevcut araba malzeme kurallarındaki gibi `Materials/` altında.
 6. Bir önizleme görseli (yukarıdan harita + birkaç yol seviyesi görüntüsü) `BlenderSources/maps/DagTirmanisi/onizleme/`.
+
+**1. aşama kabul edildi (7305f9a):** iki bot pisti 73 sn'de bariyere çarpmadan bitirdi, harvester bütün firkete ve tünellerden geçti. **2. aşama şimdi:** çevre detayı (madde 4–6). Kurallar: `Dag_Yol.fbx`'teki yol yüzeyi, bariyer ve tünel geometrisini ve `Dag_Merkez.json`'u **değiştirme** (test edilmiş sürüş hattı). Arazi mesh'lerini (`Arazi_*`) daha detaylı yapabilirsin; isimleri koru. Ağaçlar yola/bariyere 3 m'den yakın, tünel ağzının önüne ve yolun üstüne gelmesin. Yerleşimi Unity'ye ben kuracağım; sen `Dag_Yerlesim.json` + model FBX'lerini teslim et. Ağaç sayısı ≤ 4.000, çimen öbekleri ≤ 6.000.
 
 Önce **yalnız yol çizgisi ve kaba araziyi** (çevre detayı olmadan) teslim et: `Dag_Merkez.json` + kaba `Dag_Yol.fbx`. Ben sürüşü ve harvester'ı test ederim, onay verince çevre detayına geç. `Assets/`'e aktarırken kilit kuralı geçerli; `.meta` yazma.
 
