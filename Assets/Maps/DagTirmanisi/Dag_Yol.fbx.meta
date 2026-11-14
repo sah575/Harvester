@@ -7,6 +7,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Mat_AgacGovde
+    second: {fileID: 2100000, guid: cfea3e1b435f187df865607e3378d45e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Mat_Asfalt
     second: {fileID: 2100000, guid: bed35480d93e93482be46e7ee179a62d, type: 2}
   - first:
@@ -14,6 +19,11 @@ ModelImporter:
       assembly: UnityEngine.CoreModule
       name: Mat_Bariyer
     second: {fileID: 2100000, guid: dd241e3f7327f88ba8e2fcd6a469b9be, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mat_Kar
+    second: {fileID: 2100000, guid: 82145794765358196bdb4e4468ed91dc, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
@@ -39,6 +49,11 @@ ModelImporter:
       assembly: UnityEngine.CoreModule
       name: Mat_TunelIsik
     second: {fileID: 2100000, guid: 1815761ae1f30fae69edcc3f64461b8c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Mat_YaprakCam
+    second: {fileID: 2100000, guid: c0ab68e26bc90169f8e8c77f8c39294f, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule

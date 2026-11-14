@@ -1140,7 +1140,116 @@ public static class TrackBuilder
 
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
+        if (File.Exists(DagFolder + "/Dag_Yerlesim.json")) EditorApplication.delayCall += PlaceMountainScenery;
         Debug.Log("[Harita] Dağ Tırmanışı kuruldu: " + points.Count + " nokta, " + track.Length.ToString("F0") + " m, başlangıç " +
                   track.StartDistance.ToString("F0") + " m, bitiş " + track.FinishDistance.ToString("F0") + " m, çarpışan mesh " + colliders);
+    }
+
+    [System.Serializable] class PlacementItem { public string model; public float[] p; public float r; public float s = 1f; }
+    [System.Serializable] class PlacementList { public PlacementItem[] items; }
+
+    /// <summary>
+    /// Antigravity'nin Dag_Yerlesim.json'ını hücrelere bölünmüş instancing verisine (DagCevre.asset) çevirir ve dağ sahnesine
+    /// CevreCizici ekler. Yerleşim: p = Unity dünya konumu, r = Y ekseni etrafında derece, s = ölçek.
+    /// </summary>
+    [MenuItem("Harvester/Harita/Dağ Çevresini Yerleştir")]
+    public static void PlaceMountainScenery()
+    {
+        string jsonPath = DagFolder + "/Dag_Yerlesim.json";
+        if (!File.Exists(jsonPath)) { Debug.LogError("[Harita] Dag_Yerlesim.json yok"); return; }
+        var list = JsonUtility.FromJson<PlacementList>("{\"items\":" + File.ReadAllText(jsonPath) + "}");
+        if (list == null || list.items == null || list.items.Length == 0) { Debug.LogError("[Harita] Yerleşim boş"); return; }
+
+        string assetPath = DagFolder + "/DagCevre.asset";
+        var data = AssetDatabase.LoadAssetAtPath<CevreYerlesimi>(assetPath);
+        if (data == null) { data = ScriptableObject.CreateInstance<CevreYerlesimi>(); AssetDatabase.CreateAsset(data, assetPath); }
+        data.models.Clear();
+        data.cells.Clear();
+
+        var modelIndex = new Dictionary<string, int>();
+        var buckets = new Dictionary<long, List<Matrix4x4>>();
+        var bucketModel = new Dictionary<long, int>();
+        int missing = 0;
+        foreach (var item in list.items)
+        {
+            int mi;
+            if (!modelIndex.TryGetValue(item.model, out mi))
+            {
+                mi = -1;
+                var fbx = AssetDatabase.LoadAssetAtPath<GameObject>(DagFolder + "/" + item.model + ".fbx");
+                if (fbx != null)
+                {
+                    var model = new CevreYerlesimi.Model { name = item.model };
+                    foreach (var mf in fbx.GetComponentsInChildren<MeshFilter>(true))
+                    {
+                        if (mf.name.EndsWith("_LOD1")) model.lod1 = mf.sharedMesh;
+                        else if (model.lod0 == null || mf.name.EndsWith("_LOD0"))
+                        {
+                            model.lod0 = mf.sharedMesh;
+                            model.materials = mf.GetComponent<MeshRenderer>().sharedMaterials;
+                            model.meshOffset = mf.transform.localToWorldMatrix;
+                        }
+                    }
+                    foreach (var m in model.materials) if (m != null && !m.enableInstancing) { m.enableInstancing = true; EditorUtility.SetDirty(m); }
+                    bool grass = item.model.StartsWith("Cimen");
+                    bool sign = item.model.StartsWith("Tabela");
+                    model.castShadows = !grass;
+                    model.drawDistance = grass ? 70f : sign ? 160f : 260f;
+                    model.lodDistance = grass ? 30f : 70f;
+                    mi = data.models.Count;
+                    data.models.Add(model);
+                }
+                modelIndex[item.model] = mi;
+            }
+            if (mi < 0 || item.p == null || item.p.Length < 3) { missing++; continue; }
+            var pos = new Vector3(item.p[0], item.p[1], item.p[2]);
+            var matrix = Matrix4x4.TRS(pos, Quaternion.Euler(0f, item.r, 0f), Vector3.one * (item.s > 0f ? item.s : 1f)) * data.models[mi].meshOffset;
+            long key = ((long)mi << 40) ^ ((long)Mathf.FloorToInt(pos.x / data.cellSize) << 20) ^ (long)(Mathf.FloorToInt(pos.z / data.cellSize) & 0xFFFFF);
+            List<Matrix4x4> bucket;
+            if (!buckets.TryGetValue(key, out bucket)) { bucket = new List<Matrix4x4>(); buckets[key] = bucket; bucketModel[key] = mi; }
+            bucket.Add(matrix);
+        }
+
+        foreach (var pair in buckets)
+        {
+            var model = data.models[bucketModel[pair.Key]];
+            var mesh = model.lod0;
+            // Tek çağrıda en fazla 1000 örnek
+            for (int start = 0; start < pair.Value.Count; start += 1000)
+            {
+                int count = Mathf.Min(1000, pair.Value.Count - start);
+                var matrices = pair.Value.GetRange(start, count).ToArray();
+                var bounds = new Bounds(matrices[0].GetColumn(3), Vector3.zero);
+                foreach (var m in matrices)
+                {
+                    var b = mesh.bounds;
+                    // Örneğin mesh sınırlarının köşeleri dünya uzayında
+                    for (int c = 0; c < 8; c++)
+                    {
+                        var corner = b.center + Vector3.Scale(b.extents, new Vector3((c & 1) == 0 ? -1 : 1, (c & 2) == 0 ? -1 : 1, (c & 4) == 0 ? -1 : 1));
+                        bounds.Encapsulate(m.MultiplyPoint3x4(corner));
+                    }
+                }
+                data.cells.Add(new CevreYerlesimi.Cell { model = bucketModel[pair.Key], bounds = bounds, matrices = matrices });
+            }
+        }
+        EditorUtility.SetDirty(data);
+        AssetDatabase.SaveAssets();
+
+        var scene = EditorSceneManager.OpenScene(DagScenePath, OpenSceneMode.Single);
+        var drawer = Object.FindFirstObjectByType<CevreCizici>();
+        if (drawer == null)
+        {
+            var track = Object.FindFirstObjectByType<RaceTrack>();
+            var go = new GameObject("Cevre");
+            if (track != null) go.transform.SetParent(track.transform, false);
+            drawer = go.AddComponent<CevreCizici>();
+        }
+        drawer.data = data;
+        EditorUtility.SetDirty(drawer);
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log("[Harita] Çevre yerleştirildi: " + data.InstanceCount + " örnek, " + data.models.Count + " model, " + data.cells.Count + " hücre" +
+                  (missing > 0 ? ", modeli bulunamayan " + missing : ""));
     }
 }

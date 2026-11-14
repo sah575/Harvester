@@ -70,6 +70,67 @@
       "max_ceiling_m": 9.2
     }
   ],
-  "toplam_ucgen": 65190,
-  "mesh_sayisi": 26
+  "arazi_ucgen": 42382,
+  "toplam_ucgen": 87586,
+  "mesh_sayisi": 26,
+  "yerlesim_sayilari": {
+    "Agac_Cam_01": 1211,
+    "Agac_Ladin_01": 1260,
+    "Agac_KarliCam_01": 1077,
+    "Cimen_Obek_01": 3293,
+    "Kaya_Buyuk_01": 131,
+    "Kaya_Orta_01": 223,
+    "Tabela_KeskinViraj": 30,
+    "Tabela_KayaDusebilir": 18
+  },
+  "modeller": [
+    {
+      "model": "Agac_Cam_01",
+      "lod0_tris": 416,
+      "lod1_tris": 96,
+      "toplam_tris": 512
+    },
+    {
+      "model": "Agac_Ladin_01",
+      "lod0_tris": 452,
+      "lod1_tris": 100,
+      "toplam_tris": 552
+    },
+    {
+      "model": "Agac_KarliCam_01",
+      "lod0_tris": 312,
+      "lod1_tris": 120,
+      "toplam_tris": 432
+    },
+    {
+      "model": "Cimen_Obek_01",
+      "lod0_tris": 216,
+      "lod1_tris": 30,
+      "toplam_tris": 246
+    },
+    {
+      "model": "Kaya_Buyuk_01",
+      "lod0_tris": 320,
+      "lod1_tris": 80,
+      "toplam_tris": 400
+    },
+    {
+      "model": "Kaya_Orta_01",
+      "lod0_tris": 320,
+      "lod1_tris": 80,
+      "toplam_tris": 400
+    },
+    {
+      "model": "Tabela_KeskinViraj",
+      "lod0_tris": 68,
+      "lod1_tris": 64,
+      "toplam_tris": 132
+    },
+    {
+      "model": "Tabela_KayaDusebilir",
+      "lod0_tris": 50,
+      "lod1_tris": 50,
+      "toplam_tris": 100
+    }
+  ]
 }
