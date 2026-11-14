@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Harvester.Race;
+using Harvester.UI.Yaris;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
@@ -28,6 +29,7 @@ namespace Harvester.UI
         Button readyButton;
         readonly List<Button> trackButtons=new List<Button>();
         TMP_Text trackInfo;
+        bool choosingTrack;
         GameObject connectionOverlay;
         TMP_Text connectionTitle,connectionNotice;
         Button connectionAction;
@@ -88,29 +90,44 @@ namespace Harvester.UI
             // Ağ bileşeninin eski alanları yaşamaya devam eder; oda görünümünü bu panel çizer.
             foreach(Transform child in room.transform)child.gameObject.SetActive(child==roomCarContent);
             MenuWidgets.Clear(roomCarContent);
-            MenuWidgets.Height(roomCarContent,860);
-            roomPlayers=MenuWidgets.Text(roomCarContent,"",23,150);
-            roomInfo=MenuWidgets.Text(roomCarContent,"",22,75);
-            trackInfo=MenuWidgets.Text(roomCarContent,"",22,40);
-            trackButtons.Clear();
+            choosingTrack=false;
+            MenuWidgets.Height(roomCarContent,650);
+            roomPlayers=MenuWidgets.Text(roomCarContent,"",23,165);roomPlayers.richText=false;
+            roomInfo=MenuWidgets.Text(roomCarContent,"",22,85);
+            trackButtons.Clear();trackInfo=null;
+            MenuWidgets.Button(roomCarContent,"GARAJ / ARAÇ SEÇ",OpenGarage);
+            MenuWidgets.Button(roomCarContent,"MAĞAZA",OpenShop);
+            MenuWidgets.Height(MenuWidgets.Button(roomCarContent,"SÜR",ShowTracks).transform,65);
+            MenuWidgets.Button(roomCarContent,"AYARLAR",()=>Open(settings));
+            MenuWidgets.Button(roomCarContent,"ANA MENÜ",()=>lobby.Instance.LeaveRoom());
+            readyButton=null;
+            UpdateRoom();
+        }
+        void ShowTracks()
+        {
+            Open(room);choosingTrack=true;
+            foreach(Transform child in room.transform)child.gameObject.SetActive(child==roomCarContent);
+            MenuWidgets.Clear(roomCarContent);MenuWidgets.Height(roomCarContent,760);
+            trackInfo=MenuWidgets.Text(roomCarContent,lobby.SinglePlayer?"PİST SEÇİMİ":"PİST OYLAMASI",28,44);
+            roomPlayers=MenuWidgets.Text(roomCarContent,"",20,145);roomPlayers.richText=false;
+            roomInfo=MenuWidgets.Text(roomCarContent,"",21,78);trackButtons.Clear();
             for(int i=0;i<lobby.TrackNames.Length;i++)
             {
                 int index=i;
-                trackButtons.Add(MenuWidgets.Button(roomCarContent,lobby.TrackNames[i],()=>{
-                    var n=lobby.Instance;
-                    if(n==null||!CanSelectTrack(n))return;
-                    n.SetTrack(index);UpdateRoom();
-                }));
+                var button=MenuWidgets.Button(roomCarContent,lobby.TrackNames[i],()=>{
+                    var n=lobby.Instance;if(n==null||!n.InRoom)return;
+                    if(lobby.SinglePlayer){n.SetTrack(index);n.SetReady(true);}
+                    else {if(n.LocalReady)n.SetReady(false);n.VoteTrack(n.LocalVote==index?-1:index);}
+                    UpdateRoom();
+                });
+                MenuWidgets.Height(button.transform,125);
+                var label=button.GetComponentInChildren<TMP_Text>();label.richText=false;label.fontSize=21;
+                trackButtons.Add(button);
             }
-            MenuWidgets.Button(roomCarContent,"GARAJ / ARAÇ SEÇ",OpenGarage);
-            MenuWidgets.Button(roomCarContent,"MAĞAZA",OpenShop);
-            readyButton=MenuWidgets.Button(roomCarContent,lobby.SinglePlayer?"SÜR":"HAZIR",()=>{
-                var n=lobby.Instance;if(n!=null)n.SetReady(lobby.SinglePlayer||!n.LocalReady);
+            readyButton=lobby.SinglePlayer?null:MenuWidgets.Button(roomCarContent,"HAZIR",()=>{
+                var n=lobby.Instance;if(n!=null)n.SetReady(!n.LocalReady);
             });
-            MenuWidgets.Height(readyButton.transform,65);
-            MenuWidgets.Button(roomCarContent,"AYARLAR",()=>Open(settings));
-            MenuWidgets.Button(roomCarContent,"ANA MENÜ",()=>lobby.Instance.LeaveRoom());
-            UpdateRoom();
+            MenuWidgets.Button(roomCarContent,"GERİ",ShowRoom);UpdateRoom();
         }
         void ReturnToSession(){if(lobby.Instance!=null&&lobby.Instance.InRoom)ShowRoom();else ShowMain("");}
         void RoomChanged(){if(room.activeSelf)UpdateRoom();}
@@ -153,16 +170,6 @@ namespace Harvester.UI
             }
             else if(connecting){connecting=false;connectionOverlay.SetActive(false);}
         }
-        static bool CanSelectTrack(lobby n)
-        {
-            if(!n.InRoom)return false;
-            for(int i=0;i<n.PlayerCount;i++)
-            {
-                var p=n.GetPlayer(i);
-                if(n.IsLocal(p)&&n.IsRoomOwner(p))return true;
-            }
-            return false;
-        }
         void UpdateRoom()
         {
             var n=lobby.Instance;if(n==null||!n.InRoom||roomPlayers==null)return;
@@ -170,20 +177,29 @@ namespace Harvester.UI
             var lines=new System.Text.StringBuilder(lobby.SinglePlayer?"TEK OYUNCU\n":"YARIŞ ODASI\n");
             for(int i=0;i<n.PlayerCount;i++){
                 var p=n.GetPlayer(i);lines.Append(n.IsLocal(p)?"• ":"  ").Append(p.Name.ToString().Replace("<","‹"))
-                    .Append(n.IsRoomOwner(p)?" / KURUCU":"").Append(p.Ready?" / HAZIR":" / BEKLİYOR").Append('\n');
+                    .Append(n.IsRoomOwner(p)?" / KURUCU":"").Append(p.Ready?" / HAZIR":" / BEKLİYOR")
+                    .Append(lobby.SinglePlayer?"":p.VotedTrack>=0?" / OY: "+lobby.TrackNames[p.VotedTrack]:" / OY VERMEDİ").Append('\n');
             }
             roomPlayers.text=lines.ToString();
-            bool canSelect=CanSelectTrack(n);
-            trackInfo.text="PİST / "+lobby.TrackNames[n.TrackIndex]+(canSelect?"":" / KURUCU SEÇER");
-            for(int i=0;i<trackButtons.Count;i++)
+            if(choosingTrack)
             {
-                var button=trackButtons[i];button.interactable=canSelect;
-                button.GetComponentInChildren<TMP_Text>().text=(i==n.TrackIndex?"• ":"  ")+lobby.TrackNames[i];
-                button.GetComponentInChildren<TMP_Text>().color=i==n.TrackIndex?MenuWidgets.Accent:MenuWidgets.Ink;
+                for(int i=0;i<trackButtons.Count;i++)
+                {
+                    var button=trackButtons[i];
+                    string details=i==0?"TURLU · yaklaşık 1,4 km":"SPRİNT · yaklaşık 5 km";
+                    var names=new System.Text.StringBuilder();
+                    if(!lobby.SinglePlayer)
+                        for(int j=0;j<n.PlayerCount;j++)
+                        {var p=n.GetPlayer(j);if(p.VotedTrack==i){if(names.Length>0)names.Append(", ");names.Append(p.Name.ToString());}}
+                    button.GetComponentInChildren<TMP_Text>().text=lobby.TrackNames[i]+"\n"+details+
+                        (lobby.SinglePlayer?"\nSEÇ VE SÜR":"\n"+n.TrackVotes(i)+" OY · "+(names.Length==0?"Henüz oy yok":names.ToString()));
+                    button.GetComponent<Image>().color=!lobby.SinglePlayer&&n.LocalVote==i?new Color(.27f,.34f,.20f):new Color(.14f,.18f,.16f);
+                }
             }
             roomInfo.text=lobby.SinglePlayer?"Aracını hazırla ve yola çık.":"DAVET KODU / "+n.RoomCode+
-                (n.AutoStartRemaining>=0?"\nBAŞLIYOR / "+Mathf.CeilToInt(n.AutoStartRemaining):"\nHerkes hazır olduğunda yarış başlar.");
-            readyButton.GetComponentInChildren<TMP_Text>().text=lobby.SinglePlayer?"SÜR":n.LocalReady?"HAZIR DEĞİLİM":"HAZIR";
+                (n.AutoStartRemaining>=0?"\nBAŞLIYOR / "+Mathf.CeilToInt(n.AutoStartRemaining):"\nOyunu ver, ardından HAZIR düğmesine bas.");
+            if(readyButton!=null)readyButton.GetComponentInChildren<TMP_Text>().text=n.LocalReady?"HAZIR DEĞİLİM":"HAZIR";
+            PistKarariBildirimi.Capture(n);
         }
         void LoadoutChanged(){var n=lobby.Instance;if(n!=null&&n.InRoom&&n.LocalReady)n.SetReady(false);}
         public void OpenGarage()
@@ -353,7 +369,7 @@ namespace Harvester.UI
         }
         void Update()
         {
-            if(started)UpdateConnection();
+            if(started){UpdateConnection();if(lobby.Instance!=null)PistKarariBildirimi.Capture(lobby.Instance);}
             if(started&&room.activeSelf&&Time.unscaledTime>=nextRoomUpdate){nextRoomUpdate=Time.unscaledTime+.1f;UpdateRoom();}
             if(!started||(!shop.activeSelf&&!(garage.activeSelf&&section=="ARACIM")))return;
             var active=EventSystem.current!=null?EventSystem.current.currentSelectedGameObject:null;

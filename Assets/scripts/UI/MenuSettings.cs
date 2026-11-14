@@ -13,11 +13,18 @@ namespace Harvester.UI
         const string ScaleKey=Prefix+"ÖlçekÇarpanı.v2";
         const string LegacyScaleKey=Prefix+"Ölçek";
         static readonly Dictionary<UniversalRenderPipelineAsset,float> originalScales = new Dictionary<UniversalRenderPipelineAsset,float>();
+        static bool miniMapEnabled=true;
+        public static bool MiniMapEnabled
+        {
+            get=>miniMapEnabled;
+            set{miniMapEnabled=value;PlayerPrefs.SetInt(Prefix+"MiniHarita",value?1:0);}
+        }
         public static float MusicVolume => PlayerPrefs.GetFloat(Prefix+"Müzik",.7f);
         public static float EffectVolume => PlayerPrefs.GetFloat(Prefix+"Efekt",1);
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void ApplySaved()
         {
+            miniMapEnabled=PlayerPrefs.GetInt(Prefix+"MiniHarita",1)==1;
             RestoreScale();
             Application.quitting -= RestoreScale; Application.quitting += RestoreScale;
             AudioListener.volume=PlayerPrefs.GetFloat(Prefix+"Ana",1);
@@ -68,6 +75,7 @@ namespace Harvester.UI
             Dropdown(parent,"Kalite",qualities,QualitySettings.GetQualityLevel(),i=>{Harvester.Race.RuntimeQuality.SetUserLevel(i);ApplySavedScale();PlayerPrefs.Save();});
             Range(parent,"Görüntü ölçeği (çarpan)",ReadScaleMultiplier(),.75f,1.25f,v=>{PlayerPrefs.SetFloat(ScaleKey,v);ApplySavedScale();PlayerPrefs.Save();});
             MenuWidgets.Text(parent,"KAMERA",28,42);
+            Dropdown(parent,"Mini harita",new List<string>{"Kapalı","Açık"},MiniMapEnabled?1:0,i=>{MiniMapEnabled=i==1;PlayerPrefs.Save();});
             Dropdown(parent,"Dikiz aynası",new List<string>{"Kapalı","Açık"},PlayerPrefs.GetInt("Harvester.RearViewMirror",1),i=>{Harvester.Race.RearViewMirror.UserEnabled=i==1;PlayerPrefs.Save();});
             Dropdown(parent,"Varsayılan kamera",new List<string>{"Yakın takip","Uzak takip","Kaput","Kokpit"},PlayerPrefs.GetInt("Harvester.CarCameraMode",0),i=>{PlayerPrefs.SetInt("Harvester.CarCameraMode",i);PlayerPrefs.Save();});
             MenuWidgets.Text(parent,"KONTROLLER",28,42);

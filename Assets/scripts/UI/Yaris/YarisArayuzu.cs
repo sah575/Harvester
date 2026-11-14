@@ -38,8 +38,10 @@ namespace Harvester.UI.Yaris
         }
         void Awake()
         {
+            gameObject.AddComponent<PistKarariBildirimi>();
             gameObject.AddComponent<YarisSonuclari>();
             gameObject.AddComponent<YarisIzleyici>();
+            gameObject.AddComponent<YarisMiniHarita>();
             var canvas = GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 40;
             var scaler = GetComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920,1080); scaler.matchWidthOrHeight = .5f;
