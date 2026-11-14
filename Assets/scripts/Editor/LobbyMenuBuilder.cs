@@ -37,13 +37,13 @@ public static class LobbyMenuBuilder
             MenuWidgets.Fill(line,new Vector2(0,i/72f),new Vector2(1,(i+.12f)/72));line.GetComponent<Image>().raycastTarget=false;
         }
         var header=MenuWidgets.Text(root,"H A R V E S T E R   /   GECE VARDİYASI",28);MenuWidgets.Fill((RectTransform)header.transform,new Vector2(.045f,.92f),new Vector2(.75f,.97f));
-        menus.balance=MenuWidgets.Text(root,"HURDA",24);menus.balance.alignment=TMPro.TextAlignmentOptions.Right;MenuWidgets.Fill((RectTransform)menus.balance.transform,new Vector2(.75f,.92f),new Vector2(.95f,.97f));
+        menus.balance=MenuWidgets.Text(root,"$0",24);menus.balance.alignment=TMPro.TextAlignmentOptions.Right;MenuWidgets.Fill((RectTransform)menus.balance.transform,new Vector2(.75f,.92f),new Vector2(.95f,.97f));
         var raw=MenuWidgets.Box(root,"Araç vitrini",Color.white);MenuWidgets.Fill(raw,new Vector2(.48f,.16f),new Vector2(1,.89f));
         Object.DestroyImmediate(raw.GetComponent<Image>());menus.previewImage=raw.gameObject.AddComponent<RawImage>();menus.previewImage.raycastTarget=true;
         menus.home=Panel(root,"Ana menü",new Vector2(.05f,.19f),new Vector2(.46f,.85f));
         MenuWidgets.Text(menus.home.transform,"HASAT\nBAŞLIYOR.",70,190);
         MenuWidgets.Text(menus.home.transform,"Motoru çalıştır. Sisin içinden çık.\nBiçerdöver kimseyi beklemez.",24,76);
-        foreach(string label in new[]{"OYNA","GARAJ","MAĞAZA","AYARLAR","ÇIKIŞ"})MenuWidgets.Button(menus.home.transform,label);
+        foreach(string label in new[]{"TEK OYUNCU","ÇOK OYUNCU","AYARLAR","ÇIKIŞ"})MenuWidgets.Button(menus.home.transform,label);
         MenuWidgets.Button(menus.connection.transform,"ANA MENÜ");MenuWidgets.Button(menus.room.transform,"AYARLAR");
         menus.garage=Showcase(root,"Garaj");
         Label(menus.garage.transform,"ATÖLYE / 03",new Vector2(.035f,.855f),new Vector2(.23f,.91f),34);

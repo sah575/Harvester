@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -23,6 +24,9 @@ namespace Harvester.UI
                 return veri;
             }
         }
+        // Eski kayıt alanı ve anahtarı bakiyeyi ve sahipliği korumak için değişmez.
+        public static string Dolar(int miktar) => "$" + miktar.ToString("N0", CultureInfo.GetCultureInfo("tr-TR"));
+        public static int Fiyat(int eskiFiyat) => (int)Math.Min(int.MaxValue, Math.Max(0L, (long)eskiFiyat * 5));
         public static int Bakiye => Veri.hurda;
         public static bool Sahip(string kimlik) => Veri.sahip.Contains(kimlik);
         public static bool SatinAl(string kimlik, int fiyat)
@@ -40,7 +44,7 @@ namespace Harvester.UI
             if (miktar <= 0 || string.IsNullOrWhiteSpace(sebep)) return;
             Veri.hurda = (int)Math.Min(int.MaxValue, (long)Bakiye + miktar);
             Kaydet();
-            Debug.Log("Hurda eklendi: " + miktar + " / " + sebep);
+            Debug.Log("Dolar eklendi: " + Dolar(miktar) + " / " + sebep);
         }
         static void Kaydet() { PlayerPrefs.SetString(Key, JsonUtility.ToJson(Veri)); PlayerPrefs.Save(); }
     }

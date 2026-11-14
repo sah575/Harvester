@@ -24,7 +24,10 @@ namespace Harvester.UI
         int selected,selectedSlot,selectedPaint,selectedUpgrade,variant,level;
         string section="GÖRÜNÜM",lastSection="";
         bool started,ownsCatalog;
-        bool Connected=>NetworkManager.Singleton!=null&&NetworkManager.Singleton.IsListening;
+        TMP_Text roomPlayers,roomInfo;
+        Button readyButton;
+        lobby network;
+        float nextRoomUpdate;
         CarDefinition Car=>catalog!=null?catalog.Get(selected):null;
         void Start()
         {
@@ -34,24 +37,25 @@ namespace Harvester.UI
             draft=CarLoadoutStore.Load(catalog);selected=draft.definition;candidate=draft;
             if(CarLoadoutStore.HasSave)GarageLoadouts.Remember(catalog,draft);
             preview=gameObject.AddComponent<GaragePreview>();preview.Initialize(previewImage);
-            Bind(home,"OYNA",()=>Open(connection));Bind(home,"GARAJ",OpenGarage);Bind(home,"MAĞAZA",OpenShop);
+            Bind(home,"TEK OYUNCU",()=>lobby.Instance.StartSinglePlayer());Bind(home,"ÇOK OYUNCU",()=>Open(connection));
             Bind(home,"AYARLAR",()=>Open(settings));Bind(home,"ÇIKIŞ",()=>Application.Quit());
-            Bind(connection,"ANA MENÜ",()=>ShowMain(""));Bind(garage,"GERİ",()=>ShowMain(""));Bind(garage,"KAYDET",Save);
-            Bind(shop,"GERİ",()=>ShowMain(""));Bind(shop,"SATIN AL",BuyCar);
+            Bind(connection,"ANA MENÜ",()=>ShowMain(""));Bind(garage,"GERİ",ReturnToSession);Bind(garage,"KAYDET",Save);
+            Bind(shop,"GERİ",ReturnToSession);Bind(shop,"SATIN AL",BuyCar);
             Bind(garage,"ÖNCEKİ ARAÇ",()=>Browse(-1));Bind(garage,"SONRAKİ ARAÇ",()=>Browse(1));
             Bind(shop,"ÖNCEKİ ARAÇ",()=>Browse(-1));Bind(shop,"SONRAKİ ARAÇ",()=>Browse(1));
             foreach(string tab in new[]{"GÖRÜNÜM","BOYA","PERFORMANS","ARACIM"})
             {string choice=tab;Bind(garage,tab,()=>{section=choice;candidate=draft;DrawGarage();if(choice=="ARACIM")preview.Overview();else FocusModule();});}
             Bind(garage,"TÜM ARACI GÖR",()=>preview.Overview());
-            Bind(settings,"GERİ",()=>{if(Connected)ShowRoom();else ShowMain("");});Bind(room,"AYARLAR",()=>Open(settings));
+            Bind(settings,"GERİ",()=>{ReturnToSession();});Bind(room,"AYARLAR",()=>Open(settings));
             MenuSettings.Build(settingsContent);started=true;
-            if(room.activeSelf)ShowRoom();else ShowMain(message.text);
+            network=lobby.Instance;
+            if(network!=null)network.RoomChanged+=RoomChanged;
+            if(lobby.Instance!=null&&lobby.Instance.InRoom)ShowRoom();else ShowMain(message.text);
         }
         static void Bind(GameObject panel,string name,UnityEngine.Events.UnityAction action)
         {foreach(var b in panel.GetComponentsInChildren<Button>(true))if(b.name==name)b.onClick.AddListener(action);}
         void Open(GameObject panel)
         {
-            if((panel==garage||panel==shop||panel==home||panel==connection)&&Connected)return;
             foreach(var p in new[]{home,connection,room,garage,shop,settings})p.SetActive(p==panel);
             if(preview!=null)
             {
@@ -71,24 +75,53 @@ namespace Harvester.UI
         }
         public void ShowRoom()
         {
-            foreach(var p in new[]{home,connection,room,garage,shop,settings})if(p!=null)p.SetActive(p==room);
-            if(!started)return;preview.Visible(false);MenuWidgets.Clear(roomCarContent);
-            var saved=CarLoadoutStore.Load(catalog);var def=catalog.Get(saved.definition);
-            MenuWidgets.Text(roomCarContent,"ARACIM / "+(def!=null?def.displayName:"Araç tanımı yok"),22,38);
-            MenuWidgets.Text(roomCarContent,"Seçim kayıtlıdır. Satın alma ve modifiye için odadan ayrıl.",18,30);
+            Open(room);
+            if(!started)return;
+            // Ağ bileşeninin eski alanları yaşamaya devam eder; oda görünümünü bu panel çizer.
+            foreach(Transform child in room.transform)child.gameObject.SetActive(child==roomCarContent);
+            MenuWidgets.Clear(roomCarContent);
+            MenuWidgets.Height(roomCarContent,650);
+            roomPlayers=MenuWidgets.Text(roomCarContent,"",23,190);
+            roomInfo=MenuWidgets.Text(roomCarContent,"",22,75);
+            MenuWidgets.Button(roomCarContent,"GARAJ / ARAÇ SEÇ",OpenGarage);
+            MenuWidgets.Button(roomCarContent,"MAĞAZA",OpenShop);
+            readyButton=MenuWidgets.Button(roomCarContent,lobby.SinglePlayer?"SÜR":"HAZIR",()=>{
+                var n=lobby.Instance;if(n!=null)n.SetReady(lobby.SinglePlayer||!n.LocalReady);
+            });
+            MenuWidgets.Height(readyButton.transform,65);
+            MenuWidgets.Button(roomCarContent,"AYARLAR",()=>Open(settings));
+            MenuWidgets.Button(roomCarContent,"ANA MENÜ",()=>lobby.Instance.LeaveRoom());
+            UpdateRoom();
         }
+        void ReturnToSession(){if(lobby.Instance!=null&&lobby.Instance.InRoom)ShowRoom();else ShowMain("");}
+        void RoomChanged(){if(room.activeSelf)UpdateRoom();}
+        void UpdateRoom()
+        {
+            var n=lobby.Instance;if(n==null||!n.InRoom||roomPlayers==null)return;
+            foreach(Transform child in room.transform)child.gameObject.SetActive(child==roomCarContent);
+            var lines=new System.Text.StringBuilder(lobby.SinglePlayer?"TEK OYUNCU\n":"YARIŞ ODASI\n");
+            for(int i=0;i<n.PlayerCount;i++){
+                var p=n.GetPlayer(i);lines.Append(n.IsLocal(p)?"• ":"  ").Append(p.Name.ToString().Replace("<","‹"))
+                    .Append(n.IsRoomOwner(p)?" / KURUCU":"").Append(p.Ready?" / HAZIR":" / BEKLİYOR").Append('\n');
+            }
+            roomPlayers.text=lines.ToString();
+            roomInfo.text=lobby.SinglePlayer?"Aracını hazırla ve yola çık.":"DAVET KODU / "+n.RoomCode+
+                (n.AutoStartRemaining>=0?"\nBAŞLIYOR / "+Mathf.CeilToInt(n.AutoStartRemaining):"\nHerkes hazır olduğunda yarış başlar.");
+            readyButton.GetComponentInChildren<TMP_Text>().text=lobby.SinglePlayer?"SÜR":n.LocalReady?"HAZIR DEĞİLİM":"HAZIR";
+        }
+        void LoadoutChanged(){var n=lobby.Instance;if(n!=null&&n.InRoom&&n.LocalReady)n.SetReady(false);}
         public void OpenGarage()
         {
-            if(Connected)return;draft=CarLoadoutStore.Load(catalog);selected=draft.definition;candidate=draft;section="GÖRÜNÜM";
+            LoadoutChanged();draft=CarLoadoutStore.Load(catalog);selected=draft.definition;candidate=draft;section="GÖRÜNÜM";
             Open(garage);preview.Overview();DrawGarage();
         }
         public void OpenShop()
-        {if(Connected)return;selected=CarLoadoutStore.Load(catalog).definition;draft=catalog.DefaultLoadout(selected);candidate=draft;Open(shop);preview.Overview();DrawShop();}
-        void Notice(string text){if(message!=null)message.text=text;if(balance!=null)balance.text=HurdaEkonomisi.Bakiye.ToString("N0")+" HURDA";}
+        {selected=CarLoadoutStore.Load(catalog).definition;draft=catalog.DefaultLoadout(selected);candidate=draft;Open(shop);preview.Overview();DrawShop();}
+        void Notice(string text){if(message!=null)message.text=text;if(balance!=null)balance.text=HurdaEkonomisi.Dolar(HurdaEkonomisi.Bakiye);}
         void RefreshPreview(){if(Car!=null)preview.Show(Car,candidate);}
         public void Browse(int direction)
         {
-            if(Connected||catalog.Count==0)return;
+            if(catalog.Count==0)return;
             for(int i=0;i<catalog.Count;i++)
             {
                 selected=(selected+direction+catalog.Count)%catalog.Count;
@@ -146,14 +179,14 @@ namespace Harvester.UI
             for(int v=0;v<mod.variants.Count;v++)
             {
                 int option=v;var part=mod.variants[v];bool owned=v==0||HurdaEkonomisi.Sahip(PartKey(selectedSlot,v));
-                string state=draft.GetSlot(selectedSlot)==v?"TAKILI":owned?"SAHİP OLUNAN":part.price.ToString("N0")+" HURDA";
+                string state=draft.GetSlot(selectedSlot)==v?"TAKILI":owned?"SAHİP OLUNAN":HurdaEkonomisi.Dolar(HurdaEkonomisi.Fiyat(part.price));
                 ModuleButton(garageContent,part.displayName+"\n<size=17>"+state+"</size>",v==variant,()=>{candidate=draft;candidate.SetSlot(selectedSlot,option);DrawGarage();Notice("Parça önizleniyor. Uygulamak için parçayı tak.");});
             }
-            int price=mod.variants[variant].price;bool have=variant==0||HurdaEkonomisi.Sahip(PartKey(selectedSlot,variant));
-            var confirm=MenuWidgets.Button(garageContent,have?"PARÇAYI TAK":"SATIN AL VE TAK / "+price.ToString("N0"),()=>
+            int price=HurdaEkonomisi.Fiyat(mod.variants[variant].price);bool have=variant==0||HurdaEkonomisi.Sahip(PartKey(selectedSlot,variant));
+            var confirm=MenuWidgets.Button(garageContent,have?"PARÇAYI TAK":"SATIN AL VE TAK / "+HurdaEkonomisi.Dolar(price),()=>
             {
-                if(Connected)return;if(variant>0&&!HurdaEkonomisi.SatinAl(PartKey(selectedSlot,variant),price)){Notice("Yeterli Hurda yok.");return;}
-                draft=candidate;Notice("Parça takıldı. Modifiyeni kaydetmeyi unutma.");DrawGarage();
+                if(variant>0&&!HurdaEkonomisi.SatinAl(PartKey(selectedSlot,variant),price)){Notice("Yeterli dolar yok.");return;}
+                LoadoutChanged();draft=candidate;Notice("Parça takıldı. Modifiyeni kaydetmeyi unutma.");DrawGarage();
             });confirm.interactable=have||HurdaEkonomisi.Bakiye>=price;
         }
         void DrawPaint()
@@ -174,7 +207,7 @@ namespace Harvester.UI
             MenuWidgets.Text(garageContent,"Renk doğrudan önizlemeye uygulanır. Kalıcı olması için kaydet.",19,80);
         }
         void ApplyPaint(Color color)
-        {if(Connected)return;draft.SetPaint(selectedPaint,color);candidate=draft;var input=garageContent.GetComponentInChildren<TMP_InputField>();if(input!=null)input.SetTextWithoutNotify(ColorUtility.ToHtmlStringRGBA(draft.GetPaint(selectedPaint)));RefreshPreview();Notice("Renk uygulandı.");}
+        {LoadoutChanged();draft.SetPaint(selectedPaint,color);candidate=draft;var input=garageContent.GetComponentInChildren<TMP_InputField>();if(input!=null)input.SetTextWithoutNotify(ColorUtility.ToHtmlStringRGBA(draft.GetPaint(selectedPaint)));RefreshPreview();Notice("Renk uygulandı.");}
         void DrawUpgrades()
         {
             MenuWidgets.Text(garageModules,"03 / PERFORMANS",21,38);if(Car.upgrades.Count==0)return;
@@ -188,15 +221,15 @@ namespace Harvester.UI
             {
                 int option=i;bool owned=i==0||HurdaEkonomisi.Sahip(UpgradeKey(cat.type,i));
                 string label=i==0?"STOK":cat.levels[i-1].displayName;
-                string price=owned?"SAHİP OLUNAN":cat.levels[i-1].price.ToString("N0")+" HURDA";
+                string price=owned?"SAHİP OLUNAN":HurdaEkonomisi.Dolar(HurdaEkonomisi.Fiyat(cat.levels[i-1].price));
                 ModuleButton(garageContent,label+"\n<size=17>"+price+"</size>",i==level,()=>{candidate=draft;candidate.SetUpgrade(cat.type,option);DrawGarage();Notice("Seviye önizleniyor. Uygulamak için onayla.");});
             }
             bool have=level==0||HurdaEkonomisi.Sahip(UpgradeKey(cat.type,level));
-            int cost=level==0?0:cat.levels[level-1].price;bool previous=level<=1||HurdaEkonomisi.Sahip(UpgradeKey(cat.type,level-1));
-            var buy=MenuWidgets.Button(garageContent,have?"SEVİYEYİ UYGULA":"SATIN AL VE UYGULA / "+cost.ToString("N0"),()=>
+            int cost=level==0?0:HurdaEkonomisi.Fiyat(cat.levels[level-1].price);bool previous=level<=1||HurdaEkonomisi.Sahip(UpgradeKey(cat.type,level-1));
+            var buy=MenuWidgets.Button(garageContent,have?"SEVİYEYİ UYGULA":"SATIN AL VE UYGULA / "+HurdaEkonomisi.Dolar(cost),()=>
             {
-                if(Connected)return;if(level>0&&!HurdaEkonomisi.SatinAl(UpgradeKey(cat.type,level),cost)){Notice("Yeterli Hurda yok.");return;}
-                draft=candidate;Notice("Geliştirme uygulandı. Modifiyeni kaydet.");DrawGarage();
+                if(level>0&&!HurdaEkonomisi.SatinAl(UpgradeKey(cat.type,level),cost)){Notice("Yeterli dolar yok.");return;}
+                LoadoutChanged();draft=candidate;Notice("Geliştirme uygulandı. Modifiyeni kaydet.");DrawGarage();
             });buy.interactable=have||(previous&&HurdaEkonomisi.Bakiye>=cost);
             if(!previous&&!have)MenuWidgets.Text(garageContent,"Önce bir önceki seviyeyi satın al.",19,56);
         }
@@ -223,32 +256,33 @@ namespace Harvester.UI
             if(!Mathf.Approximately(a,b)){var old=MenuWidgets.Box(bar,"Önce",new Color(.82f,.83f,.74f));MenuWidgets.Fill(old,Vector2.zero,new Vector2(Mathf.Clamp01(a/maximum),.3f));}
         }
         void Save()
-        {if(Connected||Car==null||!HurdaEkonomisi.Sahip("araba/"+Car.id))return;GarageLoadouts.Save(catalog,draft);candidate=draft;DrawGarage();Notice("Takılı modifiye ve araç seçimi kaydedildi.");}
+        {if(Car==null||!HurdaEkonomisi.Sahip("araba/"+Car.id))return;LoadoutChanged();GarageLoadouts.Save(catalog,draft);candidate=draft;DrawGarage();Notice("Takılı modifiye ve araç seçimi kaydedildi.");}
         void DrawShop()
         {
             MenuWidgets.Clear(shopContent);if(Car==null)return;
             shopCarName.text=Car.displayName;shopCounter.text=(selected+1).ToString("00")+" / "+catalog.Count.ToString("00");
             bool owned=HurdaEkonomisi.Sahip("araba/"+Car.id);
-            MenuWidgets.Text(shopContent,owned?"GARAJINDA MEVCUT":Car.price.ToString("N0")+" HURDA",28,42);
+            MenuWidgets.Text(shopContent,owned?"GARAJINDA MEVCUT":HurdaEkonomisi.Dolar(HurdaEkonomisi.Fiyat(Car.price)),28,42);
             foreach(var b in shop.GetComponentsInChildren<Button>(true))if(b.name=="SATIN AL")
-            {b.GetComponentInChildren<TMP_Text>().text=owned?"GARAJDA DÜZENLE":"ARACI SATIN AL";b.interactable=owned||HurdaEkonomisi.Bakiye>=Car.price;}
+            {b.GetComponentInChildren<TMP_Text>().text=owned?"GARAJDA DÜZENLE":"ARACI SATIN AL";b.interactable=owned||HurdaEkonomisi.Bakiye>=HurdaEkonomisi.Fiyat(Car.price);}
             DrawStats(shopStats,draft,draft);RefreshPreview();
         }
         void BuyCar()
         {
-            if(Connected||Car==null)return;
+            if(Car==null)return;
             if(HurdaEkonomisi.Sahip("araba/"+Car.id))
             {int index=selected;OpenGarage();selected=index;draft=GarageLoadouts.Load(catalog,index);candidate=draft;section="ARACIM";DrawGarage();return;}
-            if(!HurdaEkonomisi.SatinAl("araba/"+Car.id,Car.price)){Notice("Yeterli Hurda yok.");return;}
+            if(!HurdaEkonomisi.SatinAl("araba/"+Car.id,HurdaEkonomisi.Fiyat(Car.price))){Notice("Yeterli dolar yok.");return;}
             DrawShop();Notice("Araç satın alındı. Garajda düzenleyebilirsin.");
         }
         void Update()
         {
-            if(!started||Connected||(!shop.activeSelf&&!(garage.activeSelf&&section=="ARACIM")))return;
+            if(started&&room.activeSelf&&Time.unscaledTime>=nextRoomUpdate){nextRoomUpdate=Time.unscaledTime+.1f;UpdateRoom();}
+            if(!started||(!shop.activeSelf&&!(garage.activeSelf&&section=="ARACIM")))return;
             var active=EventSystem.current!=null?EventSystem.current.currentSelectedGameObject:null;
             if(active!=null&&active.GetComponent<TMP_InputField>()!=null)return;
             if(Input.GetKeyDown(KeyCode.LeftArrow))Browse(-1);if(Input.GetKeyDown(KeyCode.RightArrow))Browse(1);
         }
-        void OnDestroy(){if(ownsCatalog&&catalog!=null)Destroy(catalog);}
+        void OnDestroy(){if(network!=null)network.RoomChanged-=RoomChanged;if(ownsCatalog&&catalog!=null)Destroy(catalog);}
     }
 }

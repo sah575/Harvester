@@ -27,6 +27,8 @@ namespace Harvester.Race
         private RacePhase lastPhase = RacePhase.Waiting;
         private float goShownUntil;
         private readonly StringBuilder sb = new StringBuilder();
+        /// <summary>Eski OnGUI göstergeleri (sıra/süre, hız, ışıklar, harvester uyarısı). Yeni arayüz bunları çiziyor.</summary>
+        public static bool DrawLegacyHud = false;
 
         private void Update()
         {
@@ -98,8 +100,9 @@ namespace Harvester.Race
             int total = manager.Standings.Count;
             RacePhase phase = manager.Phase;
 
-            // Sol üst: sıra, tur, süre
-            if (hasMe && phase != RacePhase.Waiting)
+            // Sol üst, hız, ışıklar ve harvester uyarısı artık Codex'in YarisArayuzu'nda (UI/Yaris). Burada yalnız
+            // C4/C5 gelene kadar kişisel durum ve sonuç tablosu kalıyor.
+            if (DrawLegacyHud && hasMe && phase != RacePhase.Waiting)
             {
                 float time = me.Status == RacerStatus.Racing ? manager.RaceTime : me.Time;
                 int tenth = Mathf.RoundToInt(time * 10f);
@@ -115,7 +118,7 @@ namespace Harvester.Race
             }
 
             // Sol alt: hız
-            if (car != null && !car.IsEliminated)
+            if (DrawLegacyHud && car != null && !car.IsEliminated)
             {
                 int kmh = Mathf.RoundToInt(Mathf.Abs(car.ForwardSpeed) * 3.6f);
                 if (kmh != cachedKmh) { cachedKmh=kmh; cachedSpeed=kmh+" km/sa"; }
@@ -123,7 +126,7 @@ namespace Harvester.Race
             }
 
             // Geri sayım
-            if (phase == RacePhase.Countdown && !manager.StartLightsOut)
+            if (DrawLegacyHud && phase == RacePhase.Countdown && !manager.StartLightsOut)
             {
                 // Geçici: Codex'in yarış arayüzü gelene kadar basit kırmızı ışıklar
                 int lit = manager.StartLightsLit;
@@ -139,14 +142,14 @@ namespace Harvester.Race
                 }
                 GUI.color = old;
             }
-            else if (Time.time < goShownUntil)
+            else if (DrawLegacyHud && Time.time < goShownUntil)
             {
                 Shadowed(new Rect(0, h * 0.25f, w, 200 * s), "<color=#7CFC00>BAŞLA!</color>", big);
             }
 
             // Harvester uyarısı
             Transform harvester = manager.HarvesterTransform;
-            if (phase == RacePhase.Racing && harvester != null && car != null && !car.IsEliminated && (!hasMe || me.Status == RacerStatus.Racing))
+            if (DrawLegacyHud && phase == RacePhase.Racing && harvester != null && car != null && !car.IsEliminated && (!hasMe || me.Status == RacerStatus.Racing))
             {
                 // Tablanın önünden arabanın arkasına pist boyunca açık (harvester'ın tasması bununla ölçülür); yanımızda/arkamızdaysa düz mesafe
                 float distance = Vector3.Distance(harvester.position, car.transform.position);

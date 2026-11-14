@@ -81,7 +81,7 @@ public static class LobbyUIBuilder
         lanFields.gameObject.SetActive(false);
         CreateSpacer(menu, 16);
         var hostButton = CreateButton(menu, resources, "ODA KUR", AccentColor);
-        var joinButton = CreateButton(menu, resources, "ODAYA KATIL", ButtonColor);
+        var joinButton = CreateButton(menu, resources, "KATIL", ButtonColor);
         var menuStatus = CreateText("Status", menu, "", 22, FontStyles.Normal, new Color(0.95f, 0.55f, 0.45f), 60);
 
         // --- Oda ---
