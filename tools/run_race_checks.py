@@ -9,6 +9,7 @@ p.add_argument('--label',default='temizlik')
 p.add_argument('--seconds',type=float,default=60)
 p.add_argument('--gpu',choices=['intel','nvidia'],default='intel')
 p.add_argument('--api',choices=['auto','vulkan','glcore'],default='auto')
+p.add_argument('--sim',default='',help='Yapay gecikme, iki tarafa: "gecikme_ms,oynama_ms,kayıp_yüzde" (ör. 100,20,2)')
 p.add_argument('--no-debris-collision',action='store_true',help='Geçici test: elenen araç enkazlarının collider\'larını kapatır.')
 a=p.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9_-]+',a.label):p.error('Etiket yalnızca harf, rakam, alt çizgi veya tire içermeli.')
@@ -28,6 +29,9 @@ exe=root/'Builds/LinuxTest/Harvester.x86_64'
 common=[str(exe),'-screen-fullscreen','0','-screen-width','1920' if a.mode=='perf' else '1280','-screen-height','1080' if a.mode=='perf' else '720']
 if a.api!='auto':common+=['-force-'+a.api]
 if a.no_debris_collision:common+=['-testEnkazCarpismaYok']
+if a.sim:
+    lat,jit,loss=(a.sim.split(',')+['0','0'])[:3]
+    common+=['-simLatency',lat,'-simJitter',jit,'-simLoss',loss];result_sim=a.sim
 processes=[]
 def launch(role,flags):
     log=out/(role+'.log')

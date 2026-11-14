@@ -15,6 +15,7 @@ namespace Harvester.Net
     {
         const string PingMessage = "hv_ping";
         const string PongMessage = "hv_pong";
+        const string ProbeMessage = "hv_probe";
         const float PingInterval = 1f;
         const float Smoothing = 0.3f;
 
@@ -30,6 +31,87 @@ namespace Harvester.Net
         public static float LocalRtt { get; private set; }
 
         static readonly Dictionary<ulong, float> clientRtts = new Dictionary<ulong, float>();
+
+        /// <summary>
+        /// İstemcide NGO'nun ServerTime'ı gerçek sunucu saatinin ne kadar gerisinde (sn). Pong'a sunucunun o anki
+        /// ServerTime'ı eklenir: gerçek = o değer + yolun yarısı. Gecikme tahminleri bunu kullanır; ölçüm yoksa NaN.
+        /// </summary>
+        public static float ServerTimeLag { get; private set; } = float.NaN;
+
+        /// <summary>
+        /// Gerçek sunucu saati tahmini (sn): host'ta ServerTime, istemcide ServerTime + ServerTimeLag.
+        /// Bütün makinelerde aynı ana yakın değer verir (pong ölçümünün asimetrisi kadar, birkaç ms hata).
+        /// </summary>
+        public static double RealServerTime
+        {
+            get
+            {
+                var nm = NetworkManager.Singleton;
+                if (nm == null || !nm.IsListening) return Time.realtimeSinceStartupAsDouble;
+                double t = nm.ServerTime.Time;
+                return nm.IsServer || float.IsNaN(ServerTimeLag) ? t : t + ServerTimeLag;
+            }
+        }
+
+        /// <summary>Saat ölçümü hazır mı (istemcide en az bir pong alındı).</summary>
+        public static bool ClockReady
+        {
+            get
+            {
+                var nm = NetworkManager.Singleton;
+                return nm != null && nm.IsListening && (nm.IsServer || !float.IsNaN(ServerTimeLag));
+            }
+        }
+
+        static NetStatsHUD instance;
+
+        /// <summary>Gecikme ölçüm damgası alındığında (nesne, gönderildiği gerçek sunucu saati, sahibindeki konum).</summary>
+        public static event System.Action<ulong, double, Vector3> ProbeReceived;
+
+        /// <summary>
+        /// Sahibi olduğu nesne için "şu gerçek saatte şuradaydım" damgası yollar. İstemci sunucuya yollar, sunucu
+        /// kendisi ölçer ve diğer istemcilere iletir. Güvenilmez ve küçük (28 bayt), saniyede birkaç kez.
+        /// </summary>
+        public static void SendProbe(ulong objectId, double realTime, Vector3 position)
+        {
+            var nm = NetworkManager.Singleton;
+            if (instance == null || instance.registeredOn == null || nm == null || !ClockReady) return;
+            using (var writer = new FastBufferWriter(40, Allocator.Temp))
+            {
+                writer.WriteValueSafe(objectId);
+                writer.WriteValueSafe(realTime);
+                writer.WriteValueSafe(position);
+                if (nm.IsServer)
+                {
+                    foreach (ulong id in nm.ConnectedClientsIds)
+                        if (id != NetworkManager.ServerClientId)
+                            instance.registeredOn.SendNamedMessage(ProbeMessage, id, writer, NetworkDelivery.Unreliable);
+                }
+                else
+                {
+                    instance.registeredOn.SendNamedMessage(ProbeMessage, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
+                }
+            }
+        }
+
+        void OnProbe(ulong sender, FastBufferReader reader)
+        {
+            reader.ReadValueSafe(out ulong objectId);
+            reader.ReadValueSafe(out double realTime);
+            reader.ReadValueSafe(out Vector3 position);
+            ProbeReceived?.Invoke(objectId, realTime, position);
+            if (!nm.IsServer) return;
+            // Sunucu: istemcinin damgasını diğer istemcilere ilet
+            using (var writer = new FastBufferWriter(40, Allocator.Temp))
+            {
+                writer.WriteValueSafe(objectId);
+                writer.WriteValueSafe(realTime);
+                writer.WriteValueSafe(position);
+                foreach (ulong id in nm.ConnectedClientsIds)
+                    if (id != NetworkManager.ServerClientId && id != sender)
+                        registeredOn.SendNamedMessage(ProbeMessage, id, writer, NetworkDelivery.Unreliable);
+            }
+        }
 
         /// <summary>Host'ta bir istemcinin gidiş-dönüş süresi (sn). Ölçüm yoksa 0.</summary>
         public static float ClientRtt(ulong clientId)
@@ -54,6 +136,7 @@ namespace Harvester.Net
 
         void Awake()
         {
+            instance = this;
             nm = GetComponent<NetworkManager>();
 
             var args = System.Environment.GetCommandLineArgs();
@@ -107,7 +190,9 @@ namespace Harvester.Net
             registeredOn = nm.CustomMessagingManager;
             registeredOn.RegisterNamedMessageHandler(PingMessage, OnPing);
             registeredOn.RegisterNamedMessageHandler(PongMessage, OnPong);
+            registeredOn.RegisterNamedMessageHandler(ProbeMessage, OnProbe);
             LocalRtt = 0f;
+            ServerTimeLag = float.NaN;
             clientRtts.Clear();
             nextPing = 0f; nextTextUpdate=0;
         }
@@ -143,9 +228,10 @@ namespace Harvester.Net
         void OnPing(ulong sender, FastBufferReader reader)
         {
             reader.ReadValueSafe(out double sentAt);
-            using (var writer = new FastBufferWriter(8, Allocator.Temp))
+            using (var writer = new FastBufferWriter(16, Allocator.Temp))
             {
                 writer.WriteValueSafe(sentAt);
+                writer.WriteValueSafe(nm.IsServer ? nm.ServerTime.Time : -1.0);
                 registeredOn.SendNamedMessage(PongMessage, sender, writer, NetworkDelivery.Unreliable);
             }
         }
@@ -153,7 +239,15 @@ namespace Harvester.Net
         void OnPong(ulong sender, FastBufferReader reader)
         {
             reader.ReadValueSafe(out double sentAt);
+            double serverStamp = -1.0;
+            if (reader.TryBeginRead(8)) reader.ReadValueSafe(out serverStamp);
             float rtt = (float)(Time.realtimeSinceStartupAsDouble - sentAt);
+            if (!nm.IsServer && serverStamp >= 0.0 && rtt > 0f)
+            {
+                // Pong yolda rtt/2 kaldı: şu an gerçek sunucu saati ≈ damga + rtt/2
+                float lag = (float)(serverStamp + rtt * 0.5 - nm.ServerTime.Time);
+                ServerTimeLag = float.IsNaN(ServerTimeLag) ? lag : Mathf.Lerp(ServerTimeLag, lag, Smoothing);
+            }
             if (nm.IsServer)
             {
                 clientRtts[sender] = clientRtts.TryGetValue(sender, out float old) && old > 0f ? Mathf.Lerp(old, rtt, Smoothing) : rtt;

@@ -194,8 +194,8 @@ public static class HarvesterAIBuilder
         // NetSyncBuilder'daki harvester değerleri
         ex.PositionSmoothing = 0.1f;
         ex.Strength = 1f;
-        ex.MaxLookahead = 0.6f;
-        ex.MaxOffset = 12f;
+        ex.MaxLookahead = 1f;   // yüksek pingde ölçülen gecikme ~0.7 sn
+        ex.MaxOffset = 45f;     // 47 m/sn × 1 sn; 12 m tahmini 300 ms dolaylarında kesiyordu
         ex.MaxYawOffset = 45f;
         ex.SnapDistance = 8f;
 

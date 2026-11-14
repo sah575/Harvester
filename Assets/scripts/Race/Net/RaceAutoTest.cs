@@ -80,6 +80,9 @@ namespace Harvester.Race
         private string role = "yerel";
         private StreamWriter trace;
         private double lastTraceMs;
+        private Vector3? lastHarvesterTrace;
+        private double lastHarvesterTraceMs;
+        private double lastSyncLogMs;
         private float timer;
         private readonly List<Driver> drivers = new List<Driver>();
 
@@ -621,6 +624,38 @@ namespace Harvester.Race
                 string id = !car.IsSpawned ? car.name : car.NetworkObject.IsPlayerObject ? car.OwnerClientId.ToString() : "bot" + car.NetworkObjectId;
                 trace.WriteLine(FormattableString.Invariant(
                     $"{ms:F1},{st:F3},{id},{(car.DrivesLocally ? 1 : 0)},{p.x:F3},{p.y:F3},{p.z:F3},{car.transform.eulerAngles.y:F2},{v.x:F2},{v.z:F2},{(car.IsEliminated ? 1 : 0)}"));
+            }
+            // Gecikme bileşenleri (saniyede bir, log'a): gecikme tahmininin ayarı için
+            if (ms - lastSyncLogMs >= 1000 && nm != null && nm.IsListening)
+            {
+                lastSyncLogMs = ms;
+                var sbLog = new System.Text.StringBuilder("[Sync] rtt=");
+                sbLog.Append((Harvester.Net.NetStatsHUD.LocalRtt * 1000f).ToString("F0", CultureInfo.InvariantCulture))
+                     .Append(" stLag=").Append((Harvester.Net.NetStatsHUD.ServerTimeLag * 1000f).ToString("F0", CultureInfo.InvariantCulture))
+                     .Append(" tickLat=").Append(nm.NetworkTimeSystem.TickLatency)
+                     .Append(" localMinusServer=").Append(((nm.LocalTime.Time - nm.ServerTime.Time) * 1000.0).ToString("F0", CultureInfo.InvariantCulture));
+                foreach (var car in RaceCar.All)
+                {
+                    if (car == null || car.DrivesLocally) continue;
+                    var ex = car.GetComponent<Harvester.Net.RemoteExtrapolator>();
+                    if (ex != null) sbLog.Append(" ileri[").Append(car.OwnerClientId).Append("]=").Append((ex.LastLookahead * 1000f).ToString("F0", CultureInfo.InvariantCulture));
+                }
+                Debug.Log(sbLog.ToString());
+            }
+
+            // Harvester: sunucuda gerçek konum (local=1), istemcide gösterilen konum. Hız iki karenin farkından.
+            var manager = RaceManager.Instance;
+            Transform harvester = manager != null ? manager.HarvesterTransform : null;
+            if (harvester != null)
+            {
+                Vector3 hp = harvester.position;
+                float dt = (float)((ms - lastHarvesterTraceMs) / 1000.0);
+                Vector3 hv = lastHarvesterTrace.HasValue && dt > 0f && dt < 0.2f ? (hp - lastHarvesterTrace.Value) / dt : Vector3.zero;
+                lastHarvesterTrace = hp;
+                lastHarvesterTraceMs = ms;
+                bool authority = nm == null || !nm.IsListening || nm.IsServer;
+                trace.WriteLine(FormattableString.Invariant(
+                    $"{ms:F1},{st:F3},harvester,{(authority ? 1 : 0)},{hp.x:F3},{hp.y:F3},{hp.z:F3},{harvester.eulerAngles.y:F2},{hv.x:F2},{hv.z:F2},0"));
             }
         }
     }

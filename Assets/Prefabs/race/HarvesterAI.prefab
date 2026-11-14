@@ -2999,8 +2999,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   PositionSmoothing: 0.1
   Strength: 1
-  MaxLookahead: 0.6
-  MaxOffset: 12
+  MaxLookahead: 1
+  MaxOffset: 45
   MaxYawOffset: 45
   SnapDistance: 8
 --- !u!114 &9175033137624041253
