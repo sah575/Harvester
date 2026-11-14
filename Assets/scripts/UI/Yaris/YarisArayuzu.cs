@@ -102,7 +102,9 @@ namespace Harvester.UI.Yaris
             ulong id=NetworkManager.Singleton!=null?NetworkManager.Singleton.LocalClientId:0;
             RacerState local;bool hasLocal=manager.TryGetState(id,out local);
             summary.text=(hasLocal?local.Position.ToString():"—")+" / "+manager.Standings.Count+"   SIRA\n"+
-                "TUR "+(hasLocal?local.Lap:1)+" / "+manager.Laps+"\n"+TimeText(manager.RaceTime);
+                (manager.LoopTrack?"TUR "+(hasLocal?local.Lap:1)+" / "+manager.Laps:
+                "KALAN / "+(hasLocal&&RaceTrack.Current!=null?
+                Mathf.CeilToInt(Mathf.Max(0,RaceTrack.Current.FinishDistance-local.Progress)).ToString(Format)+" m":"—"))+"\n"+TimeText(manager.RaceTime);
             DrawStandings(manager,id);
             float meters=manager.HarvesterGapMeters(id),seconds=manager.HarvesterGapSeconds(id);
             harvester.text="HARVESTER — "+(float.IsNaN(seconds)?"—":seconds.ToString("0.0",Format))+" sn";

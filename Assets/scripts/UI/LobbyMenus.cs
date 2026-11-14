@@ -26,6 +26,8 @@ namespace Harvester.UI
         bool started,ownsCatalog;
         TMP_Text roomPlayers,roomInfo;
         Button readyButton;
+        readonly List<Button> trackButtons=new List<Button>();
+        TMP_Text trackInfo;
         GameObject connectionOverlay;
         TMP_Text connectionTitle,connectionNotice;
         Button connectionAction;
@@ -86,9 +88,20 @@ namespace Harvester.UI
             // Ağ bileşeninin eski alanları yaşamaya devam eder; oda görünümünü bu panel çizer.
             foreach(Transform child in room.transform)child.gameObject.SetActive(child==roomCarContent);
             MenuWidgets.Clear(roomCarContent);
-            MenuWidgets.Height(roomCarContent,650);
-            roomPlayers=MenuWidgets.Text(roomCarContent,"",23,190);
+            MenuWidgets.Height(roomCarContent,860);
+            roomPlayers=MenuWidgets.Text(roomCarContent,"",23,150);
             roomInfo=MenuWidgets.Text(roomCarContent,"",22,75);
+            trackInfo=MenuWidgets.Text(roomCarContent,"",22,40);
+            trackButtons.Clear();
+            for(int i=0;i<lobby.TrackNames.Length;i++)
+            {
+                int index=i;
+                trackButtons.Add(MenuWidgets.Button(roomCarContent,lobby.TrackNames[i],()=>{
+                    var n=lobby.Instance;
+                    if(n==null||!CanSelectTrack(n))return;
+                    n.SetTrack(index);UpdateRoom();
+                }));
+            }
             MenuWidgets.Button(roomCarContent,"GARAJ / ARAÇ SEÇ",OpenGarage);
             MenuWidgets.Button(roomCarContent,"MAĞAZA",OpenShop);
             readyButton=MenuWidgets.Button(roomCarContent,lobby.SinglePlayer?"SÜR":"HAZIR",()=>{
@@ -140,6 +153,16 @@ namespace Harvester.UI
             }
             else if(connecting){connecting=false;connectionOverlay.SetActive(false);}
         }
+        static bool CanSelectTrack(lobby n)
+        {
+            if(!n.InRoom)return false;
+            for(int i=0;i<n.PlayerCount;i++)
+            {
+                var p=n.GetPlayer(i);
+                if(n.IsLocal(p)&&n.IsRoomOwner(p))return true;
+            }
+            return false;
+        }
         void UpdateRoom()
         {
             var n=lobby.Instance;if(n==null||!n.InRoom||roomPlayers==null)return;
@@ -150,6 +173,14 @@ namespace Harvester.UI
                     .Append(n.IsRoomOwner(p)?" / KURUCU":"").Append(p.Ready?" / HAZIR":" / BEKLİYOR").Append('\n');
             }
             roomPlayers.text=lines.ToString();
+            bool canSelect=CanSelectTrack(n);
+            trackInfo.text="PİST / "+lobby.TrackNames[n.TrackIndex]+(canSelect?"":" / KURUCU SEÇER");
+            for(int i=0;i<trackButtons.Count;i++)
+            {
+                var button=trackButtons[i];button.interactable=canSelect;
+                button.GetComponentInChildren<TMP_Text>().text=(i==n.TrackIndex?"• ":"  ")+lobby.TrackNames[i];
+                button.GetComponentInChildren<TMP_Text>().color=i==n.TrackIndex?MenuWidgets.Accent:MenuWidgets.Ink;
+            }
             roomInfo.text=lobby.SinglePlayer?"Aracını hazırla ve yola çık.":"DAVET KODU / "+n.RoomCode+
                 (n.AutoStartRemaining>=0?"\nBAŞLIYOR / "+Mathf.CeilToInt(n.AutoStartRemaining):"\nHerkes hazır olduğunda yarış başlar.");
             readyButton.GetComponentInChildren<TMP_Text>().text=lobby.SinglePlayer?"SÜR":n.LocalReady?"HAZIR DEĞİLİM":"HAZIR";
