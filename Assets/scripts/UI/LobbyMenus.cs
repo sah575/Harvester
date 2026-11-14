@@ -26,6 +26,10 @@ namespace Harvester.UI
         bool started,ownsCatalog;
         TMP_Text roomPlayers,roomInfo;
         Button readyButton;
+        GameObject connectionOverlay;
+        TMP_Text connectionTitle,connectionNotice;
+        Button connectionAction;
+        bool connecting;
         lobby network;
         float nextRoomUpdate;
         CarDefinition Car=>catalog!=null?catalog.Get(selected):null;
@@ -49,7 +53,8 @@ namespace Harvester.UI
             Bind(settings,"GERİ",()=>{ReturnToSession();});Bind(room,"AYARLAR",()=>Open(settings));
             MenuSettings.Build(settingsContent);started=true;
             network=lobby.Instance;
-            if(network!=null)network.RoomChanged+=RoomChanged;
+            if(network!=null){network.RoomChanged+=RoomChanged;network.MenuReturned+=MenuReturned;}
+            BuildConnectionOverlay();
             if(lobby.Instance!=null&&lobby.Instance.InRoom)ShowRoom();else ShowMain(message.text);
         }
         static void Bind(GameObject panel,string name,UnityEngine.Events.UnityAction action)
@@ -72,6 +77,7 @@ namespace Harvester.UI
             if(!started)return;
             draft=CarLoadoutStore.Load(catalog);selected=draft.definition;candidate=draft;
             preview.Visible(true);MenuWidgets.Fill(previewImage.rectTransform,new Vector2(.48f,.16f),new Vector2(1,.89f));preview.Overview();RefreshPreview();Notice(status);
+            ShowConnectionError(status);
         }
         public void ShowRoom()
         {
@@ -95,6 +101,45 @@ namespace Harvester.UI
         }
         void ReturnToSession(){if(lobby.Instance!=null&&lobby.Instance.InRoom)ShowRoom();else ShowMain("");}
         void RoomChanged(){if(room.activeSelf)UpdateRoom();}
+        void BuildConnectionOverlay()
+        {
+            var shade=MenuWidgets.Box(transform,"Bağlantı bildirimi",new Color(0,0,0,.82f));
+            MenuWidgets.Fill(shade,Vector2.zero,Vector2.one);connectionOverlay=shade.gameObject;
+            var box=MenuWidgets.Column(shade,"Bağlantı kutusu");
+            MenuWidgets.Fill(box,new Vector2(.3f,.35f),new Vector2(.7f,.65f));
+            connectionTitle=MenuWidgets.Text(box,"",32,55);connectionTitle.color=MenuWidgets.Accent;
+            connectionNotice=MenuWidgets.Text(box,"",24,120);connectionNotice.richText=false;
+            connectionNotice.enableWordWrapping=true;connectionNotice.overflowMode=TextOverflowModes.Ellipsis;
+            connectionAction=MenuWidgets.Button(box,"TAMAM",()=>{
+                bool cancel=connecting;connecting=false;connectionOverlay.SetActive(false);
+                if(cancel&&lobby.Instance!=null)lobby.Instance.LeaveRoom();
+                Notice("");
+            });
+            connectionOverlay.SetActive(false);
+        }
+        void MenuReturned(string status){ShowConnectionError(status);}
+        void ShowConnectionError(string status)
+        {
+            if(connectionOverlay==null)return;
+            connecting=false;
+            connectionOverlay.SetActive(!string.IsNullOrWhiteSpace(status));
+            if(!connectionOverlay.activeSelf)return;
+            connectionOverlay.transform.SetAsLastSibling();
+            connectionTitle.text="BAĞLANTI UYARISI";connectionNotice.text=status;
+            connectionAction.GetComponentInChildren<TMP_Text>().text="TAMAM";
+        }
+        void UpdateConnection()
+        {
+            var n=lobby.Instance;var nm=NetworkManager.Singleton;
+            bool pending=connection.activeSelf&&n!=null&&nm!=null&&nm.IsListening&&!n.InRoom;
+            if(pending)
+            {
+                connecting=true;connectionOverlay.SetActive(true);connectionOverlay.transform.SetAsLastSibling();
+                connectionTitle.text="BAĞLANIYOR…";connectionNotice.text="Odaya bağlanılıyor. Lütfen bekle.";
+                connectionAction.GetComponentInChildren<TMP_Text>().text="İPTAL";
+            }
+            else if(connecting){connecting=false;connectionOverlay.SetActive(false);}
+        }
         void UpdateRoom()
         {
             var n=lobby.Instance;if(n==null||!n.InRoom||roomPlayers==null)return;
@@ -277,12 +322,13 @@ namespace Harvester.UI
         }
         void Update()
         {
+            if(started)UpdateConnection();
             if(started&&room.activeSelf&&Time.unscaledTime>=nextRoomUpdate){nextRoomUpdate=Time.unscaledTime+.1f;UpdateRoom();}
             if(!started||(!shop.activeSelf&&!(garage.activeSelf&&section=="ARACIM")))return;
             var active=EventSystem.current!=null?EventSystem.current.currentSelectedGameObject:null;
             if(active!=null&&active.GetComponent<TMP_InputField>()!=null)return;
             if(Input.GetKeyDown(KeyCode.LeftArrow))Browse(-1);if(Input.GetKeyDown(KeyCode.RightArrow))Browse(1);
         }
-        void OnDestroy(){if(network!=null)network.RoomChanged-=RoomChanged;if(ownsCatalog&&catalog!=null)Destroy(catalog);}
+        void OnDestroy(){if(network!=null){network.RoomChanged-=RoomChanged;network.MenuReturned-=MenuReturned;}if(ownsCatalog&&catalog!=null)Destroy(catalog);}
     }
 }

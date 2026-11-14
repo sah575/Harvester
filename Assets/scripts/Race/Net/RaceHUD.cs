@@ -100,8 +100,8 @@ namespace Harvester.Race
             int total = manager.Standings.Count;
             RacePhase phase = manager.Phase;
 
-            // Sol üst, hız, ışıklar ve harvester uyarısı artık Codex'in YarisArayuzu'nda (UI/Yaris). Burada yalnız
-            // C4/C5 gelene kadar kişisel durum ve sonuç tablosu kalıyor.
+            // Sol üst, hız, ışıklar ve harvester uyarısı artık Codex'in YarisArayuzu'nda (UI/Yaris). Sonuç ve elenme
+            // ekranları da orada (YarisSonuclari); bu sınıf yalnız elenince izleyici kamerasını açar.
             if (DrawLegacyHud && hasMe && phase != RacePhase.Waiting)
             {
                 float time = me.Status == RacerStatus.Racing ? manager.RaceTime : me.Time;
@@ -176,7 +176,7 @@ namespace Harvester.Race
             }
 
             // Kişisel durum
-            if (hasMe && phase != RacePhase.Finished)
+            if (DrawLegacyHud && hasMe && phase != RacePhase.Finished)
             {
                 if (me.Status == RacerStatus.Eliminated || (car != null && car.IsEliminated))
                 {
@@ -189,7 +189,7 @@ namespace Harvester.Race
                 }
             }
 
-            if (phase == RacePhase.Finished) DrawResults(manager, w, h, s);
+            if (DrawLegacyHud && phase == RacePhase.Finished) DrawResults(manager, w, h, s);
         }
 
         private void DrawResults(RaceManager manager, float w, float h, float s)
