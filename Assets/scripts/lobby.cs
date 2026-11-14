@@ -15,16 +15,19 @@ public struct LobbyPlayer : INetworkSerializable, IEquatable<LobbyPlayer>
 {
     public ulong ClientId;
     public FixedString32Bytes Name;
+    /// <summary>Oyuncu garajda aracını seçip "hazır" dedi. Herkes hazırsa yarış kendiliğinden başlar.</summary>
+    public bool Ready;
 
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
     {
         serializer.SerializeValue(ref ClientId);
         serializer.SerializeValue(ref Name);
+        serializer.SerializeValue(ref Ready);
     }
 
     public bool Equals(LobbyPlayer other)
     {
-        return ClientId == other.ClientId && Name.Equals(other.Name);
+        return ClientId == other.ClientId && Name.Equals(other.Name) && Ready == other.Ready;
     }
 }
 
@@ -32,7 +35,7 @@ public class lobby : NetworkBehaviour
 {
     public const int MaxPlayers = 4;
     // Editörde ve development build'de tek başına girip test edilebilsin
-    public static int MinPlayers => Debug.isDebugBuild ? 1 : 2;
+    public static int MinPlayers => SinglePlayer || Debug.isDebugBuild ? 1 : 2;
     const int MaxNameLength = 16;
     const ushort Port = 7777;
 
@@ -72,12 +75,17 @@ public class lobby : NetworkBehaviour
     }
 
     private readonly NetworkList<LobbyPlayer> players = new NetworkList<LobbyPlayer>();
+    // Herkes hazır olunca yarışın başlayacağı sunucu zamanı; -1: geri sayım yok
+    private readonly NetworkVariable<double> autoStartAt = new NetworkVariable<double>(-1);
+    [Tooltip("Herkes hazır olduktan sonra yarışın başlamasına kalan süre (sn). Tek oyunculuda beklenmez.")]
+    [SerializeField] private float allReadyDelay = 3f;
     private readonly Dictionary<ulong, string> pendingNames = new Dictionary<ulong, string>();
     private string hostPassword;
     private bool gameStarted;
 
     private void Awake()
     {
+        Instance = this;
         hostButton.onClick.AddListener(OnHostClicked);
         joinButton.onClick.AddListener(OnJoinClicked);
         startButton.onClick.AddListener(StartGame);
@@ -191,9 +199,138 @@ public class lobby : NetworkBehaviour
 
     public override void OnDestroy()
     {
+        if (Instance == this) Instance = null;
         UnsubscribeCallbacks();
         base.OnDestroy();
     }
+
+
+    #region Arayüz API'si (Codex'in menüleri bunları çağırır)
+
+    public static lobby Instance { get; private set; }
+
+    /// <summary>Tek oyunculu oyun: yerel, dışarıya kapalı bir oda. Akış çok oyunculuyla aynı: oda → garaj → hazır → yarış.</summary>
+    public static bool SinglePlayer { get; private set; }
+
+    /// <summary>Oyuncu listesi, hazır durumları, geri sayım ya da davet kodu değişince.</summary>
+    public event Action RoomChanged;
+
+    public bool InRoom => IsSpawned;
+    public int PlayerCount => IsSpawned ? players.Count : 0;
+    public LobbyPlayer GetPlayer(int index) => players[index];
+    public bool IsLocal(LobbyPlayer p) => IsSpawned && p.ClientId == NetworkManager.LocalClientId;
+    public bool IsRoomOwner(LobbyPlayer p) => p.ClientId == NetworkManager.ServerClientId;
+
+    public bool LocalReady
+    {
+        get
+        {
+            if (!IsSpawned) return false;
+            int i = IndexOf(NetworkManager.LocalClientId);
+            return i >= 0 && players[i].Ready;
+        }
+    }
+
+    /// <summary>Herkes hazırsa yarışın başlamasına kalan saniye; geri sayım yoksa -1.</summary>
+    public float AutoStartRemaining =>
+        IsSpawned && autoStartAt.Value >= 0 ? Mathf.Max(0f, (float)(autoStartAt.Value - NetworkManager.ServerTime.Time)) : -1f;
+
+    /// <summary>Davet kodu (online oda); yoksa boş.</summary>
+    public string RoomCode
+    {
+        get
+        {
+            var nm = NetworkManager.Singleton;
+            var relay = nm != null ? nm.NetworkConfig.NetworkTransport as RelayTransport : null;
+            return relay != null ? relay.RoomCode ?? "" : "";
+        }
+    }
+
+    /// <summary>Oda kurulamadı / bağlanılamadı / bağlantı koptu gibi durumlarda menüye dönülünce çağrılır (mesajla).</summary>
+    public event Action<string> MenuReturned;
+
+    /// <summary>Tek oyunculu oyunu başlatır: yerel oda kurar. Oyuncu garajda "SÜR" deyince SetReady(true) çağrılır.</summary>
+    public void StartSinglePlayer()
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm == null || nm.IsListening) return;
+        SinglePlayer = true;
+        hostPassword = "";
+        gameStarted = false;
+        pendingNames.Clear();
+        MatchSettings.Players.Clear();
+        MatchSettings.RoomPassword = "";
+
+        var utp = nm.GetComponent<UnityTransport>();
+        // Yalnız bu bilgisayar: dışarıdan kimse bağlanamaz
+        utp.SetConnectionData("127.0.0.1", Port, "127.0.0.1");
+        nm.NetworkConfig.NetworkTransport = utp;
+        nm.NetworkConfig.ConnectionData = BuildPayload("");
+        SubscribeCallbacks();
+        nm.ConnectionApprovalCallback = ApprovalCheck;
+        if (!nm.StartHost())
+        {
+            SinglePlayer = false;
+            UnsubscribeCallbacks();
+            ShowMenu("Oyun başlatılamadı. Port " + Port + " kullanımda olabilir.");
+            return;
+        }
+        SavePlayerName();
+        SetMenuInteractable(false);
+    }
+
+    /// <summary>Çok oyunculu oda kurar (online: davet kodu, LAN: şifre). Mod SetOnlineMode ile seçilir.</summary>
+    public void HostRoom() { SinglePlayer = false; OnHostClicked(); }
+
+    /// <summary>Odaya katılır (online: kod, LAN: adres + şifre; alanlar lobinin kendi input'larından okunur).</summary>
+    public void JoinRoom() { SinglePlayer = false; OnJoinClicked(); }
+
+    public void SetOnlineMode(bool online) { SetMode(online); }
+    public bool IsOnlineMode => OnlineMode;
+
+    /// <summary>Odadan/tek oyunculudan çıkıp ana menüye döner.</summary>
+    public void LeaveRoom() { Leave(); }
+
+    /// <summary>Yerel oyuncunun hazır durumu. Tek oyunculuda hazır = yarışı hemen başlat.</summary>
+    public void SetReady(bool ready)
+    {
+        if (!IsSpawned) return;
+        SetReadyRpc(ready);
+    }
+
+    [Rpc(SendTo.Server)]
+    private void SetReadyRpc(bool ready, RpcParams rpcParams = default)
+    {
+        if (gameStarted) return;
+        int i = IndexOf(rpcParams.Receive.SenderClientId);
+        if (i < 0) return;
+        var p = players[i];
+        if (p.Ready == ready) return;
+        p.Ready = ready;
+        players[i] = p;
+    }
+
+    private bool AllReady()
+    {
+        if (players.Count < MinPlayers) return false;
+        foreach (var p in players) if (!p.Ready) return false;
+        return true;
+    }
+
+    // Sunucu: herkes hazırsa geri say, biri vazgeçerse ya da yeni biri girerse geri sayımı iptal et.
+    private void Update()
+    {
+        if (!IsSpawned || !IsServer || gameStarted) return;
+        double now = NetworkManager.ServerTime.Time;
+        if (AllReady())
+        {
+            if (autoStartAt.Value < 0) autoStartAt.Value = now + (SinglePlayer ? 0.2 : allReadyDelay);
+            else if (now >= autoStartAt.Value) StartGame();
+        }
+        else if (autoStartAt.Value >= 0) autoStartAt.Value = -1;
+    }
+
+    #endregion
 
     #region Menü
 
@@ -324,6 +461,7 @@ public class lobby : NetworkBehaviour
 
     private void Leave()
     {
+        SinglePlayer = false;
         NetworkManager.Singleton.Shutdown();
         UnsubscribeCallbacks();
         ShowMenu("");
@@ -335,6 +473,9 @@ public class lobby : NetworkBehaviour
         roomPanel.SetActive(false);
         SetMenuInteractable(true);
         menuStatusText.text = status;
+        // Bağlantı yoksa tek oyunculu oturum da bitmiştir (yarıştan dönüşte Awake'te bağlantı hâlâ açık, dokunma)
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) SinglePlayer = false;
+        MenuReturned?.Invoke(status);
         var menus = GetComponent<Harvester.UI.LobbyMenus>();
         if (menus != null) menus.ShowMain(status);
     }
@@ -401,7 +542,9 @@ public class lobby : NetworkBehaviour
 
             players.Clear();
             foreach (var id in NetworkManager.ConnectedClientsIds) AddPlayer(id);
+            autoStartAt.Value = -1;
         }
+        autoStartAt.OnValueChanged += OnAutoStartChanged;
 
         menuPanel.SetActive(false);
         roomPanel.SetActive(true);
@@ -414,9 +557,15 @@ public class lobby : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         players.OnListChanged -= OnPlayersChanged;
+        autoStartAt.OnValueChanged -= OnAutoStartChanged;
     }
 
     private void OnPlayersChanged(NetworkListEvent<LobbyPlayer> change)
+    {
+        RefreshRoom();
+    }
+
+    private void OnAutoStartChanged(double previous, double current)
     {
         RefreshRoom();
     }
@@ -453,7 +602,12 @@ public class lobby : NetworkBehaviour
 
         response.CreatePlayerObject = false; // Arabaları race sahnesinde RaceSpawner oluşturuyor
 
-        if (gameStarted)
+        if (SinglePlayer && request.ClientNetworkId != NetworkManager.ServerClientId)
+        {
+            response.Approved = false;
+            response.Reason = "Tek oyunculu oyun.";
+        }
+        else if (gameStarted)
         {
             response.Approved = false;
             response.Reason = "Oyun zaten başladı.";
@@ -565,7 +719,10 @@ public class lobby : NetworkBehaviour
         bool canStart = CanStart(out string reason);
         startButton.interactable = canStart;
 
+        float remaining = AutoStartRemaining;
         if (!canStart) roomStatusText.text = reason;
-        else roomStatusText.text = IsServer ? "Hazır! Oyunu başlatabilirsin." : "Oda kurucusunun oyunu başlatması bekleniyor...";
+        else if (remaining >= 0f) roomStatusText.text = "Herkes hazır! Yarış başlıyor...";
+        else roomStatusText.text = "Herkes hazır olunca yarış başlar.";
+        RoomChanged?.Invoke();
     }
 }

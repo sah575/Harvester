@@ -29,8 +29,13 @@ namespace Harvester.Race
         [Header("Kurallar")]
         [Tooltip("Turlu pistte tur sayısı")]
         [SerializeField] private int laps = 3;
-        [Tooltip("Geri sayım (sn). Son 3 saniye 3-2-1 olarak gösterilir, öncesi \"HAZIR\".")]
-        [SerializeField] private float countdownSeconds = 4f;
+        [Header("Başlangıç ışıkları (F1 usulü)")]
+        [Tooltip("Arabalar dizildikten sonra ilk ışık yanana kadar (sn)")]
+        [SerializeField] private float lightsLead = 1f;
+        [Tooltip("Işıklar arası (sn). 5 ışık sırayla yanar.")]
+        [SerializeField] private float lightInterval = 1f;
+        [Tooltip("Beş ışık yandıktan sonra sönmelerine kadar rastgele bekleme (sn): en az / en çok")]
+        [SerializeField] private float lightsHoldMin = 0.4f, lightsHoldMax = 2f;
         [Tooltip("Yarış başladıktan kaç saniye sonra harvester kalkar")]
         [SerializeField] private float harvesterDelay = 1f;
         [Tooltip("Yarışın ne zaman biteceği")]
@@ -52,6 +57,8 @@ namespace Harvester.Race
         private readonly NetworkVariable<RacePhase> phase = new NetworkVariable<RacePhase>(RacePhase.Waiting);
         private readonly NetworkVariable<double> phaseEndTime = new NetworkVariable<double>();
         private readonly NetworkVariable<double> raceStartTime = new NetworkVariable<double>();
+        private readonly NetworkVariable<double> lightsStartTime = new NetworkVariable<double>();
+        private double offlineLightsStart;
         private readonly NetworkVariable<byte> lapCount = new NetworkVariable<byte>(3);
         private readonly NetworkVariable<ulong> harvesterObjectId = new NetworkVariable<ulong>(ulong.MaxValue);
         private NetworkList<RacerState> standings;
@@ -102,6 +109,155 @@ namespace Harvester.Race
         /// <summary>Yarış başından beri geçen süre (yarış başlamadıysa 0).</summary>
         public float RaceTime => Phase >= RacePhase.Racing ? Mathf.Max(0f, (float)(Now - (IsSpawned ? raceStartTime.Value : offlineRaceStart))) : 0f;
         public bool IsAuthority => IsSpawned ? IsServer : offline;
+
+        // ------------------------------------------------------------------ Başlangıç ışıkları
+
+        public const int StartLightCount = 5;
+
+        /// <summary>
+        /// Yanan başlangıç ışığı sayısı (0..5). Işıklar sunucu saatine bağlı: her makinede aynı anda yanar ve söner.
+        /// Beşi yandıktan sonra rastgele bir süre bekler; sönünce (StartLightsOut) yarış başlar. Kalan süre gösterilmez.
+        /// </summary>
+        public int StartLightsLit
+        {
+            get
+            {
+                if (Phase != RacePhase.Countdown || StartLightsOut) return 0;
+                double t = Now - (IsSpawned ? lightsStartTime.Value : offlineLightsStart) - lightsLead;
+                if (t < 0) return 0;
+                return Mathf.Clamp(Mathf.FloorToInt((float)(t / Mathf.Max(0.05f, lightInterval))) + 1, 0, StartLightCount);
+            }
+        }
+
+        /// <summary>Işıklar söndü: yarış başladı. İstemcide faz değişikliği gecikmeyle gelse de sunucu saatine göre aynı anda true olur.</summary>
+        public bool StartLightsOut => Phase >= RacePhase.Racing || (Phase == RacePhase.Countdown && Now >= PhaseEnd);
+
+        // ------------------------------------------------------------------ Aralar (saniye)
+
+        /// <summary>Öndeki yarışçıyla aradaki süre (sn): öndeki, bizim şu an olduğumuz noktadan kaç saniye önce geçti. Yoksa NaN.</summary>
+        public float GapToAhead(ulong clientId) { float a, b; ComputeGaps(clientId, out a, out b); return a; }
+
+        /// <summary>Arkadaki yarışçıyla aradaki süre (sn): arkadaki, bizim geçtiğimiz noktaya kaç saniye sonra geldi. Yoksa NaN.</summary>
+        public float GapToBehind(ulong clientId) { float a, b; ComputeGaps(clientId, out a, out b); return b; }
+
+        /// <summary>Harvester'ın pist boyunca bize uzaklığı (m, tablanın önünden arabanın arkasına). Yoksa NaN.</summary>
+        public float HarvesterGapMeters(ulong clientId)
+        {
+            var car = CarOf(clientId);
+            var ai = HarvesterAI.Instance;
+            Transform harvester = HarvesterTransform;
+            if (car == null || harvester == null) return float.NaN;
+            float open = ai != null ? ai.OpenGapTo(car) : float.NaN;
+            if (!float.IsNaN(open) && open > -12f && open < 1000f) return Mathf.Max(0f, open);
+            return Vector3.Distance(harvester.position, car.transform.position);
+        }
+
+        /// <summary>Harvester bizim şu an olduğumuz yere kaç saniye sonra gelir (bizim geçmiş hızımıza göre). Yoksa NaN.</summary>
+        public float HarvesterGapSeconds(ulong clientId)
+        {
+            float meters = HarvesterGapMeters(clientId);
+            RacerState me;
+            if (float.IsNaN(meters) || !TryGetState(clientId, out me)) return float.NaN;
+            History h;
+            if (!history.TryGetValue(clientId, out h) || h.Count == 0) return float.NaN;
+            double at = h.TimeAt(h.LastProgress - meters);
+            if (double.IsNaN(at))
+            {
+                // Geçmiş yetmiyorsa anlık hızdan tahmin
+                var car = CarOf(clientId);
+                float speed = car != null ? Mathf.Max(5f, Mathf.Abs(car.ForwardSpeed)) : 20f;
+                return meters / speed;
+            }
+            return Mathf.Max(0f, (float)(h.LastTime - at));
+        }
+
+        private void ComputeGaps(ulong clientId, out float ahead, out float behind)
+        {
+            ahead = behind = float.NaN;
+            int index = -1;
+            for (int i = 0; i < view.Count; i++) if (view[i].ClientId == clientId) { index = i; break; }
+            if (index < 0 || view[index].Status != RacerStatus.Racing) return;
+            History mine;
+            if (!history.TryGetValue(clientId, out mine) || mine.Count == 0) return;
+            for (int i = index - 1; i >= 0; i--)
+            {
+                if (view[i].Status != RacerStatus.Racing) continue;
+                History other;
+                if (history.TryGetValue(view[i].ClientId, out other))
+                {
+                    double at = other.TimeAt(mine.LastProgress);
+                    if (!double.IsNaN(at)) ahead = Mathf.Max(0f, (float)(mine.LastTime - at));
+                }
+                break;
+            }
+            for (int i = index + 1; i < view.Count; i++)
+            {
+                if (view[i].Status != RacerStatus.Racing) continue;
+                History other;
+                if (history.TryGetValue(view[i].ClientId, out other) && other.Count > 0)
+                {
+                    double at = mine.TimeAt(other.LastProgress);
+                    if (!double.IsNaN(at)) behind = Mathf.Max(0f, (float)(other.LastTime - at));
+                }
+                break;
+            }
+        }
+
+        /// <summary>Bir yarışçının (ilerleme, zaman) geçmişi; ara süreleri hesaplamak için. Her makine kendi tutar.</summary>
+        private class History
+        {
+            const int Capacity = 600; // 10 Hz'de 60 sn
+            readonly float[] progress = new float[Capacity];
+            readonly double[] time = new double[Capacity];
+            int start, count;
+            public int Count => count;
+            public float LastProgress => progress[(start + count - 1) % Capacity];
+            public double LastTime => time[(start + count - 1) % Capacity];
+
+            public void Add(float p, double t)
+            {
+                if (count > 0 && (p <= LastProgress || t - LastTime < 0.09)) return;
+                int i = (start + count) % Capacity;
+                if (count == Capacity) start = (start + 1) % Capacity; else count++;
+                progress[i] = p; time[i] = t;
+            }
+
+            /// <summary>İlerlemenin p olduğu an (doğrusal ara değer). Geçmiş o noktayı kapsamıyorsa NaN.</summary>
+            public double TimeAt(float p)
+            {
+                if (count == 0) return double.NaN;
+                int last = (start + count - 1) % Capacity;
+                if (p > progress[last]) return double.NaN;
+                if (p < progress[start]) return double.NaN;
+                for (int k = count - 1; k > 0; k--)
+                {
+                    int b = (start + k) % Capacity, a = (start + k - 1) % Capacity;
+                    if (p >= progress[a])
+                    {
+                        float span = progress[b] - progress[a];
+                        double f = span > 1e-4f ? (p - progress[a]) / span : 1.0;
+                        return time[a] + (time[b] - time[a]) * f;
+                    }
+                }
+                return time[start];
+            }
+        }
+
+        private readonly Dictionary<ulong, History> history = new Dictionary<ulong, History>();
+
+        private void SampleHistory()
+        {
+            if (Phase != RacePhase.Racing) { if (Phase == RacePhase.Countdown) history.Clear(); return; }
+            double now = Now;
+            for (int i = 0; i < view.Count; i++)
+            {
+                var r = view[i];
+                if (r.Status != RacerStatus.Racing) continue;
+                History h;
+                if (!history.TryGetValue(r.ClientId, out h)) { h = new History(); history[r.ClientId] = h; }
+                h.Add(r.Progress, now);
+            }
+        }
 
         /// <summary>Harvester'ın sahnedeki objesi (her makinede). Yoksa null.</summary>
         public Transform HarvesterTransform
@@ -258,7 +414,11 @@ namespace Harvester.Race
             }
             if (IsSpawned) harvesterObjectId.Value = harvester != null ? harvester.NetworkObjectId : ulong.MaxValue;
             HarvesterLink.SetRunning(false);
-            SetPhase(RacePhase.Countdown, countdownSeconds);
+            // F1 usulü: ışıklar sırayla yanar, rastgele bir beklemeden sonra söner. Bekleme sunucuda seçilir,
+            // istemciler yalnız bitiş anını (phaseEndTime) bilir; kimse ne zaman söneceğini önceden göremez.
+            if (IsSpawned) lightsStartTime.Value = Now; else offlineLightsStart = Now;
+            float hold = UnityEngine.Random.Range(lightsHoldMin, Mathf.Max(lightsHoldMin, lightsHoldMax));
+            SetPhase(RacePhase.Countdown, lightsLead + lightInterval * (StartLightCount - 1) + Mathf.Max(0.2f, lightInterval) + hold);
             Publish();
             Debug.Log("[Race] Yarış hazırlanıyor: " + racers.Count + " yarışçı, " + Laps + " tur, pist " +
                       (track != null ? (track.Loop ? "turlu " : "A→B ") + track.Length.ToString("F0") + " m" : "YOK"));
@@ -301,8 +461,10 @@ namespace Harvester.Race
                 lastSeenPhase = current;
                 PhaseChanged?.Invoke(current);
             }
-            // Girdi sadece yarışta açık (her makinede)
-            RaceCar.InputEnabled = current == RacePhase.Racing || (offline && current == RacePhase.Finished);
+            // Girdi sadece yarışta açık (her makinede). Işıklar sunucu saatine göre söner: istemci, faz değişikliğinin
+            // gelmesini (gecikme kadar) beklemeden herkesle aynı anda kalkar.
+            RaceCar.InputEnabled = current == RacePhase.Racing || StartLightsOut || (offline && current == RacePhase.Finished);
+            SampleHistory();
 
             if (!IsAuthority) return;
             double now = Now;

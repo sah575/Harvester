@@ -217,6 +217,53 @@ namespace Harvester.Race
         public int GroundedWheels => groundedCount;
         public float SteerAngle => steerAngle;
         public float TopSpeed => topSpeed;
+
+        // ------------------------------------------------------------------ Gösterge (sahte şanzıman)
+        // Arcade sürüşte vites yok; gösterge için hız aralıkları vitese bölünür. Sadece görsel, her makinede hesaplanır.
+        public const int DisplayGearCount = 6;
+        public const float IdleRpm = 900f, RedlineRpm = 7500f;
+        static readonly float[] GearTop = { 0.17f, 0.31f, 0.46f, 0.62f, 0.80f, 1.02f };
+        int displayFrame = -1, displayGear;
+        float displayRpm = IdleRpm;
+
+        /// <summary>Gösterge vitesi: -1 geri, 0 boş, 1..DisplayGearCount.</summary>
+        public int DisplayGear { get { UpdateDisplayGauge(); return displayGear; } }
+        /// <summary>Gösterge devri (IdleRpm..RedlineRpm).</summary>
+        public float DisplayRpm { get { UpdateDisplayGauge(); return displayRpm; } }
+        /// <summary>Hız km/sa (mutlak).</summary>
+        public float SpeedKmh => Mathf.Abs(forwardSpeed) * 3.6f;
+
+        void UpdateDisplayGauge()
+        {
+            if (displayFrame == Time.frameCount) return;
+            displayFrame = Time.frameCount;
+            float v = forwardSpeed;
+            float target;
+            if (v < -0.5f)
+            {
+                displayGear = -1;
+                target = Mathf.Lerp(IdleRpm, RedlineRpm * 0.8f, Mathf.Clamp01(-v / Mathf.Max(1f, reverseTopSpeed)));
+            }
+            else if (v < 0.5f && Mathf.Abs(throttleInput) < 0.05f)
+            {
+                displayGear = 0;
+                target = IdleRpm;
+            }
+            else
+            {
+                float ratio = Mathf.Clamp01(v / Mathf.Max(1f, topSpeed));
+                int g = 0;
+                while (g < DisplayGearCount - 1 && ratio > GearTop[g]) g++;
+                displayGear = g + 1;
+                float low = g == 0 ? 0f : GearTop[g - 1], high = GearTop[g];
+                float inGear = Mathf.InverseLerp(low, high, ratio);
+                float shiftRpm = g == 0 ? IdleRpm : RedlineRpm * 0.55f;
+                target = Mathf.Lerp(shiftRpm, RedlineRpm * 0.97f, inGear);
+                // Gaz basılıyken devir biraz yukarıda durur (motor yük altında)
+                target = Mathf.Min(RedlineRpm, target + Mathf.Max(0f, throttleInput) * 350f);
+            }
+            displayRpm = Mathf.Lerp(displayRpm, target, 1f - Mathf.Exp(-12f * Time.deltaTime));
+        }
         public float WheelBase => wheelBase;
         public float BrakeDeceleration => brakeDeceleration;
         /// <summary>Dönüş yardımının izin verdiği en büyük yanal ivme (m/sn²); botlar viraj hızını buna göre planlar.</summary>

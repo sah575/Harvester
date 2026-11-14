@@ -33,8 +33,9 @@ namespace Harvester.Race
             var manager = RaceManager.Instance;
             if (manager == null) return;
 
-            if (manager.Phase == RacePhase.Racing && lastPhase == RacePhase.Countdown) goShownUntil = Time.time + 1.2f;
-            lastPhase = manager.Phase;
+            RacePhase shownPhase = manager.StartLightsOut && manager.Phase == RacePhase.Countdown ? RacePhase.Racing : manager.Phase;
+            if (shownPhase == RacePhase.Racing && lastPhase == RacePhase.Countdown) goShownUntil = Time.time + 1.2f;
+            lastPhase = shownPhase;
 
             var car = RaceCar.Local;
             if (car != null && car.IsEliminated)
@@ -122,11 +123,21 @@ namespace Harvester.Race
             }
 
             // Geri sayım
-            if (phase == RacePhase.Countdown)
+            if (phase == RacePhase.Countdown && !manager.StartLightsOut)
             {
-                float remaining = manager.PhaseRemaining;
-                string text = remaining > 3f ? "HAZIR" : Mathf.CeilToInt(remaining).ToString();
-                Shadowed(new Rect(0, h * 0.25f, w, 200 * s), text, big);
+                // Geçici: Codex'in yarış arayüzü gelene kadar basit kırmızı ışıklar
+                int lit = manager.StartLightsLit;
+                float size = 70 * s, gap = 24 * s, rowW = RaceManager.StartLightCount * size + (RaceManager.StartLightCount - 1) * gap;
+                Color old = GUI.color;
+                for (int i = 0; i < RaceManager.StartLightCount; i++)
+                {
+                    var r = new Rect((w - rowW) * 0.5f + i * (size + gap), h * 0.18f, size, size);
+                    GUI.color = new Color(0f, 0f, 0f, 0.8f);
+                    GUI.DrawTexture(new Rect(r.x - 6 * s, r.y - 6 * s, r.width + 12 * s, r.height + 12 * s), Texture2D.whiteTexture);
+                    GUI.color = i < lit ? new Color(1f, 0.08f, 0.05f) : new Color(0.18f, 0.03f, 0.03f);
+                    GUI.DrawTexture(r, Texture2D.whiteTexture);
+                }
+                GUI.color = old;
             }
             else if (Time.time < goShownUntil)
             {

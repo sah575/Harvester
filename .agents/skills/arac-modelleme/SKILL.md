@@ -9,6 +9,8 @@ description: >-
 
 # Araba modelleme (Harvester)
 
+> **Koordinasyon (zorunlu):** Sen `agy`'sin. Başlarken `python3 tools/koord.py oku agy`. Yalnız `BlenderSources/**` ve `Assets/Cars/<AracAdi>/**` altına yaz. `Assets/`'e FBX/doku aktarmadan ve Unity'de render almadan önce `python3 tools/koord.py bekle agy "<iş>"`, bitince `birak agy`. Git'e yazma; iş bitince `python3 tools/koord.py teslim agy "<özet>"`. Kurallar: `docs/KOORDINASYON.md`.
+
 Harvester, Unity 6 (URP) ile yapılan online bir arcade yarış oyunu. Oyuncular arabalarını hem performans
 hem görünüş olarak modifiye ediyor. Arkadan gelen bir biçerdöver arabaları biçip parçalarına ayırıyor.
 Oyunun kodu modeli **adlarından** tanır: tekerlekleri, modifiye slotlarını, boyanabilir yüzeyleri,
